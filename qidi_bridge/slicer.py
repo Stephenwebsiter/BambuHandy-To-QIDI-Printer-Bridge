@@ -171,8 +171,12 @@ def _read_result(out_dir: str) -> str:
 
 
 def run_cli(exe: str, inputs: list[str], settings: list[str], filaments: list[str], out_dir: str,
-            plate: int, arrange: bool, log, timeout: int = 900) -> str:
+            plate: int, arrange: bool, log, timeout: int = 900, scale: float = 1.0) -> str:
     os.makedirs(out_dir, exist_ok=True)
+    scaled = abs((scale or 1.0) - 1.0) > 1e-6
+    if scaled:
+        # A resized model may no longer fit where it was, so let the slicer place it again.
+        arrange = True
     out_3mf = os.path.join(out_dir, "result.gcode.3mf")
     cmd = [exe,
            "--slice", str(plate),
@@ -180,6 +184,7 @@ def run_cli(exe: str, inputs: list[str], settings: list[str], filaments: list[st
            "--load-filaments", ";".join(filaments),
            "--arrange", "1" if arrange else "0",
            "--orient", "0",
+           *(["--scale", f"{scale:g}"] if scaled else []),
            "--allow-newer-file",
            "--outputdir", out_dir,
            # Relative on purpose: the slicer puts it inside --outputdir itself.
@@ -223,6 +228,7 @@ class Plan:
         self.colours = colours or []
         self.plate = plate if plate in PLATES else DEFAULT_PLATE
         self.grip = grip
+        self.scale = 1.0
 
 
 def make_plan(cfg: dict, process: str | None = None, filament: str | None = None,
@@ -281,7 +287,7 @@ def slice_files_for_q2(cfg: dict, files: list[str], work_dir: str, log,
     lib = library(exe, log=log, machine=plan.machine)
     log(f"Slicer: {exe}")
     m_file, p_file, f_files = _write_presets(lib, plan, work_dir, log, 1)
-    return run_cli(exe, files, [m_file, p_file], f_files, os.path.join(work_dir, "out"), 0, True, log)
+    return run_cli(exe, files, [m_file, p_file], f_files, os.path.join(work_dir, "out"), 0, True, log, scale=plan.scale)
 
 
 def slice_for_q2(cfg: dict, src: str, plate: int, work_dir: str, log,
@@ -306,16 +312,16 @@ def slice_for_q2(cfg: dict, src: str, plate: int, work_dir: str, log,
             log(f"This project uses {colours} colours. Without a QIDI Box it will be printed in one colour.")
             m_file, p_file, f_files = _write_presets(lib, plan, work_dir, log, 1)
             meshes = threemf.export_plate_meshes(src, plate, os.path.join(work_dir, "meshes"))
-            return run_cli(exe, meshes, [m_file, p_file], f_files, os.path.join(work_dir, "out"), 0, True, log)
+            return run_cli(exe, meshes, [m_file, p_file], f_files, os.path.join(work_dir, "out"), 0, True, log, scale=plan.scale)
         m_file, p_file, f_files = _write_presets(lib, plan, work_dir, log, colours)
         try:
-            return run_cli(exe, [src], [m_file, p_file], f_files, os.path.join(work_dir, "out"), plate, False, log)
+            return run_cli(exe, [src], [m_file, p_file], f_files, os.path.join(work_dir, "out"), plate, False, log, scale=plan.scale)
         except SliceError as first:
             if colours > 1:
                 raise SliceError(f"{first} Multi-colour projects can't fall back to a one-colour slice "
                                  "automatically. Pick the same Box slot for every colour to print it in one colour.")
             log(f"Slicing the project file directly did not work ({first}). Trying again with just the shapes.")
             meshes = threemf.export_plate_meshes(src, plate, os.path.join(work_dir, "meshes"))
-            return run_cli(exe, meshes, [m_file, p_file], f_files[:1], os.path.join(work_dir, "out2"), 0, True, log)
+            return run_cli(exe, meshes, [m_file, p_file], f_files[:1], os.path.join(work_dir, "out2"), 0, True, log, scale=plan.scale)
     m_file, p_file, f_files = _write_presets(lib, plan, work_dir, log, 1)
-    return run_cli(exe, [src], [m_file, p_file], f_files, os.path.join(work_dir, "out"), 0, True, log)
+    return run_cli(exe, [src], [m_file, p_file], f_files, os.path.join(work_dir, "out"), 0, True, log, scale=plan.scale)

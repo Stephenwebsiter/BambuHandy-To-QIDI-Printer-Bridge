@@ -92,6 +92,8 @@ class BoxPrintTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.exe = helpers.make_fake_slicer(os.path.join(TMP, "slicer"))
+        cls.slicer_log = os.path.join(TMP, "box-slicer.log")
+        os.environ["FAKE_SLICER_LOG"] = cls.slicer_log
         cls.printer = helpers.FakeMoonraker(box="q2_box.json")
         cls.old_cfg = config.load()
         config.save({"printer_host": "127.0.0.1", "printer_port": cls.printer.port, "slicer_path": cls.exe,
@@ -153,6 +155,21 @@ class BoxPrintTests(unittest.TestCase):
         self.assertEqual(self.printer.gcode[-1], "SAVE_VARIABLE VARIABLE=value_t0 VALUE=\"'slot1'\"\n"
                                                  "SAVE_VARIABLE VARIABLE=value_t1 VALUE=\"'slot3'\"")
         self.assertEqual([c["slot"] for c in j["colours"]], [1, 3])
+
+    def test_size_and_scale(self):
+        stl = helpers.write_ascii_stl(os.path.join(TMP, "small.stl"))
+        info = self.upload(stl)
+        self.assertEqual(info["size"], [10.0, 10.0, 10.0])
+        self.assertEqual(info["bed"], [270.0, 270.0, 0.0])
+        before = open(self.slicer_log).read() if os.path.exists(self.slicer_log) else ""
+        res = self.post("/api/jobs", json.dumps({"file_id": info["file_id"], "scale": 2}).encode(),
+                        {"Content-Type": "application/json"})
+        j = self.wait(res["job"]["id"])
+        self.assertEqual(j["state"], "done", j["log"])
+        args = json.loads(open(self.slicer_log).read()[len(before):].strip().splitlines()[-1])
+        self.assertEqual(args[args.index("--scale") + 1], "2")
+        p = helpers.make_bambu_project(os.path.join(TMP, "sz.3mf"), plates=2)
+        self.assertEqual(threemf.model_size(p, 2), [10.0, 10.0, 10.0])
 
     def test_filament_library(self):
         with urllib.request.urlopen(self.base + "/api/filaments") as r:

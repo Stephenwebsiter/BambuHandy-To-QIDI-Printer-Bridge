@@ -198,6 +198,18 @@ nav button { padding: 10px 4px; }
         <label for="quality">Quality</label>
         <select id="quality"></select>
       </div>
+      <div id="sizeRow" class="hidden">
+        <label for="scale">Size</label>
+        <div class="row" style="align-items:center">
+          <div style="flex:2"><input id="scale" type="range" min="25" max="400" step="5" value="100" style="width:100%"></div>
+          <div style="max-width:110px"><input id="scaleNum" type="number" min="5" max="1000" step="5" value="100" inputmode="numeric"></div>
+          <span>%</span>
+        </div>
+        <div class="chips" id="scaleChips">
+          <button data-s="50">50%</button><button data-s="100" class="on">100%</button><button data-s="150">150%</button><button data-s="200">200%</button><button data-s="300">300%</button>
+        </div>
+        <p class="hint" id="sizeText"></p>
+      </div>
       <div id="filamentRow" class="hidden">
         <label for="filament">Filament</label>
         <select id="filament"></select>
@@ -566,12 +578,33 @@ async function showFile(d) {
   $('trustRow').classList.toggle('hidden', !(d.kind === 'gcode' && !d.ready));
   // Quality and filament settings only matter when the bridge slices the model.
   $('qualityRow').classList.toggle('hidden', d.ready || d.kind === 'gcode');
+  $('sizeRow').classList.toggle('hidden', !d.size);
+  setScale(100);
   await refreshBox();
   renderColours();
   $('optCard').classList.remove('hidden');
   $('sendBtn').disabled = false;
   $('sendBtn').textContent = 'Print on ' + pn;
 }
+function setScale(v) {
+  v = Math.max(5, Math.min(1000, Math.round(+v || 100)));
+  $('scale').value = Math.min(400, Math.max(25, v)); $('scaleNum').value = v;
+  $('scaleChips').querySelectorAll('button').forEach(b => b.classList.toggle('on', +b.dataset.s === v));
+  if (!FILE || !FILE.size) { $('sizeText').textContent = ''; return; }
+  const f = v / 100, sz = FILE.size.map(x => x * f);
+  const fmt = (mm) => mm >= 100 ? (mm / 10).toFixed(1) + ' cm' : mm.toFixed(1) + ' mm';
+  let t = `${fmt(sz[0])} wide × ${fmt(sz[1])} deep × ${fmt(sz[2])} tall` + (v !== 100 ? ` (original ${FILE.size.map(x => x.toFixed(0)).join(' × ')} mm)` : '');
+  const bed = FILE.bed;
+  if (bed && (Math.min(sz[0], sz[1]) > Math.min(bed[0], bed[1]) || Math.max(sz[0], sz[1]) > Math.max(bed[0], bed[1]) || (bed[2] && sz[2] > bed[2]))) {
+    t += `. Too big for your ${printerName()} (${bed.map(x => x.toFixed(0)).join(' × ')} mm). Make it smaller.`;
+    $('sizeText').className = 'hint notice bad';
+  } else $('sizeText').className = 'hint';
+  $('sizeText').textContent = t;
+}
+$('scale').oninput = () => setScale($('scale').value);
+$('scaleNum').onchange = () => setScale($('scaleNum').value);
+$('scaleChips').querySelectorAll('button').forEach(b => b.onclick = () => setScale(b.dataset.s));
+
 $('plate').onchange = async () => {
   if (!FILE) return;
   const d = await api(`/api/files/${FILE.file_id}?plate=${$('plate').value}`);
@@ -644,6 +677,7 @@ $('sendBtn').onclick = async () => {
   note($('sendNote'), 'Starting…');
   const body = { file_id: FILE.file_id, plate: +$('plate').value || FILE.plate, start: $('startNow').checked,
                  trust_gcode: $('trustGcode').checked, process: $('quality').value };
+  if (FILE.size) body.scale = (+$('scaleNum').value || 100) / 100;
   if (boxReady()) body.slots = FILE.filaments.map((f, i) => CHOICE[i] === undefined ? -1 : CHOICE[i]);
   else { body.use_box = false; body.filament = $('filament').value; }
   let d; try { d = await postJSON('/api/jobs', body); } catch (e) { $('sendBtn').disabled = false; return; }

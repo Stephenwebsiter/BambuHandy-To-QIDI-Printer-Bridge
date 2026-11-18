@@ -50,7 +50,8 @@ Tip: on your phone use "Add to Home Screen" so the bridge opens like an app.
 4. **Colours**: with a QIDI Box, every colour of the model gets a Box slot (the closest colour of the same material).
    Tap another slot to change it. A plain .stl uses the filament that is in the print head now.
    Picking the same slot for every colour prints the model in one colour.
-5. Choose the quality (and the plate for projects with several plates), then tap **Print**.
+5. Choose the quality (and the plate for projects with several plates). **Size** shows how big the model will
+   print; drag it or tap 150% / 200% to make it bigger. Then tap **Print**.
    The bed plate (Settings → Bed plate) sets the bed temperature. **Extra bed grip** (on by default) slows the
    first layer down, keeps the fan off for the first 3 layers and warms the first layer a little, so prints stick.
 6. Watch progress under **Recent jobs**. The **Printer** tab shows temperatures, progress, and what is in each Box slot

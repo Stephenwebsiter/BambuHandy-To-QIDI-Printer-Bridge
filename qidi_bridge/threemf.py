@@ -220,6 +220,84 @@ class _ModelReader:
                 yield from self.triangles(sub_part, c.get("objectid"), t, depth + 1)
 
 
+def _bounds(points) -> list[float] | None:
+    lo = [float("inf")] * 3
+    hi = [float("-inf")] * 3
+    seen = False
+    for p in points:
+        seen = True
+        for i in range(3):
+            if p[i] < lo[i]:
+                lo[i] = p[i]
+            if p[i] > hi[i]:
+                hi[i] = p[i]
+    if not seen:
+        return None
+    return [round(hi[i] - lo[i], 2) for i in range(3)]
+
+
+def _stl_points(path: str):
+    size = os.path.getsize(path)
+    with open(path, "rb") as fh:
+        head = fh.read(84)
+        count = struct.unpack("<I", head[80:84])[0] if len(head) >= 84 else 0
+        if len(head) >= 84 and size == 84 + count * 50:
+            for _ in range(count):
+                rec = fh.read(50)
+                if len(rec) < 50:
+                    return
+                v = struct.unpack("<12f", rec[:48])
+                yield v[3:6]
+                yield v[6:9]
+                yield v[9:12]
+            return
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            parts = line.split()
+            if len(parts) == 4 and parts[0] == "vertex":
+                yield float(parts[1]), float(parts[2]), float(parts[3])
+
+
+def _obj_points(path: str):
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if line.startswith("v "):
+                parts = line.split()
+                if len(parts) >= 4:
+                    yield float(parts[1]), float(parts[2]), float(parts[3])
+
+
+def model_size(path: str, plate: int = 1) -> list[float] | None:
+    """Width, depth and height of the model in mm (all objects of a plate together), if it can be read."""
+    lower = path.lower()
+    try:
+        if lower.endswith(".stl"):
+            return _bounds(_stl_points(path))
+        if lower.endswith(".obj"):
+            return _bounds(_obj_points(path))
+        if lower.endswith(".3mf"):
+            with zipfile.ZipFile(path) as z:
+                reader = _ModelReader(z)
+                main = "3D/3dmodel.model"
+                build = reader.doc(main).find(f"{{{CORE_NS}}}build")
+                if build is None:
+                    return None
+                wanted = plate_objects(z).get(plate)
+
+                def pts():
+                    for item in build.findall(f"{{{CORE_NS}}}item"):
+                        oid = item.get("objectid")
+                        if wanted is not None and oid not in wanted:
+                            continue
+                        part = item.get(f"{{{PROD_NS}}}path") or main
+                        for tri in reader.triangles(part, oid, _parse_transform(item.get("transform"))):
+                            yield from tri
+                return _bounds(pts())
+    except (OSError, ValueError, KeyError, struct.error, zipfile.BadZipFile, ET.ParseError):
+        return None
+    return None
+
+
 def _write_binary_stl(path: str, tris) -> int:
     count = 0
     with open(path, "wb") as fh:

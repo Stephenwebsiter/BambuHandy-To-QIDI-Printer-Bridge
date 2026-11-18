@@ -22,7 +22,8 @@ KEEP_JOBS = 30
 class Job:
     def __init__(self, filename: str, source: str = "phone", plate: int = 1, start: bool = True,
                  trust_gcode: bool = False, process: str | None = None, filament: str | None = None,
-                 slots: list | None = None, filaments: list | None = None, use_box: bool | None = None):
+                 slots: list | None = None, filaments: list | None = None, use_box: bool | None = None,
+                 scale: float = 1.0):
         self.id = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
         self.filename = filename
         self.source = source
@@ -35,6 +36,10 @@ class Job:
         self.slots = [int(x) if str(x).lstrip("-").isdigit() else -1 for x in slots] if slots else None
         self.filaments = [str(x or "") for x in filaments] if filaments else None
         self.use_box = use_box
+        try:
+            self.scale = min(10.0, max(0.05, float(scale or 1.0)))
+        except (TypeError, ValueError):
+            self.scale = 1.0
         self.colours_used: list[dict] = []
         self.mapping: list[int] | None = None
         self.state = "queued"
@@ -230,7 +235,11 @@ def _slice_plan(job: Job, cfg: dict, fils: list[dict], mapping: list[int] | None
             chosen = profiles.match_filament_preset(lib, machine, "", "", f["type"], default_fil)
         presets.append(chosen or default_fil)
         colours.append(slot["color"] if slot is not None else f.get("color", ""))
-    return slicer.make_plan(cfg, job.process, None, presets, colours)
+    plan = slicer.make_plan(cfg, job.process, None, presets, colours)
+    plan.scale = job.scale
+    if abs(job.scale - 1) > 1e-6:
+        job.log(f"Size: {job.scale * 100:g}% of the original")
+    return plan
 
 
 def process_job(job: Job):

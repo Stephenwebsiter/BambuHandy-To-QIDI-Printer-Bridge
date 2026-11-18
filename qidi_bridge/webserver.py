@@ -315,7 +315,8 @@ class Handler(BaseHTTPRequestHandler):
         job = Job(os.path.basename(src), source="phone", plate=plate, start=bool(data.get("start", True)),
                   trust_gcode=bool(data.get("trust_gcode")), process=str(data.get("process") or ""),
                   filament=str(data.get("filament") or ""), slots=slots, filaments=fils,
-                  use_box=data.get("use_box") if isinstance(data.get("use_box"), bool) else None)
+                  use_box=data.get("use_box") if isinstance(data.get("use_box"), bool) else None,
+                  scale=data.get("scale") or 1.0)
         shutil.copyfile(src, job.path)
         self.jobs.submit(job)
         return self._json({"ok": True, "job": job.to_dict()})
@@ -341,6 +342,8 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:  # an odd file should never stop the page
             out["filaments"] = threemf.model_filaments("model.stl")
         out["thumb"] = threemf.thumbnail(path, plate) is not None
+        out["size"] = None if out["ready"] or info["kind"] == "gcode" else threemf.model_size(path, plate)
+        out["bed"] = _bed_size(cfg)
         return out
 
     def _filaments(self, cfg: dict) -> dict:
@@ -450,6 +453,23 @@ class Handler(BaseHTTPRequestHandler):
                 "selected": machine, "model": profiles.model_of(machine),
                 "default_process": slicer.default_process(processes),
                 "default_filament": profiles.match_filament_preset(lib, machine, "PLA", "QIDI", "PLA", "")}
+
+
+def _bed_size(cfg: dict) -> list[float] | None:
+    """Printable width, depth and height of the configured printer, in mm."""
+    try:
+        lib = slicer.library(slicer.resolve_slicer(cfg), machine=cfg.get("machine_preset"))
+        m = lib.resolve("machine", cfg.get("machine_preset") or slicer.DEFAULT_MACHINE)
+    except (slicer.SliceError, KeyError):
+        return None
+    try:
+        pts = [tuple(float(v) for v in p.split("x")) for p in m.get("printable_area") or []]
+        h = float(m.get("printable_height") or 0)
+    except (ValueError, AttributeError):
+        return None
+    if not pts:
+        return None
+    return [max(p[0] for p in pts) - min(p[0] for p in pts), max(p[1] for p in pts) - min(p[1] for p in pts), h]
 
 
 def _uploaded(file_id: str) -> str | None:
