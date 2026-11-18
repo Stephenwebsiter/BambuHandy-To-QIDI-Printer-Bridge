@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Q2 Print Bridge</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg">
+<meta name="theme-color" content="#1f6feb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+:root {
+  --bg: #f4f6f8; --card: #ffffff; --text: #1b1f24; --muted: #5d6773; --line: #dde2e7;
+  --accent: #1f6feb; --accent-text: #ffffff; --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e;
+  --chip: #eef2f6;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1419; --card: #182028; --text: #e6edf3; --muted: #9aa6b2; --line: #2b3640;
+          --accent: #4493f8; --accent-text: #0b1117; --ok: #3fb950; --warn: #d29922; --bad: #f85149; --chip: #222c36; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+       font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { padding: 18px 16px 8px; max-width: 640px; margin: 0 auto; display: flex; align-items: center; gap: 10px; }
+header h1 { font-size: 20px; margin: 0; flex: 1; }
+#printerPill { font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--chip); color: var(--muted); white-space: nowrap; }
+nav { max-width: 640px; margin: 0 auto; padding: 0 16px; display: flex; gap: 6px; }
+nav button { flex: 1; border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 10px; border-radius: 10px; font: inherit; }
+nav button.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+main { max-width: 640px; margin: 0 auto; padding: 12px 16px 40px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+.card h2 { font-size: 16px; margin: 0 0 10px; }
+label { display: block; font-size: 14px; color: var(--muted); margin: 12px 0 4px; }
+input[type=text], input[type=number], input[type=password], select {
+  width: 100%; padding: 11px 12px; font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 10px; }
+.check { display: flex; gap: 10px; align-items: flex-start; margin: 12px 0 0; color: var(--text); font-size: 15px; }
+.check input { width: 20px; height: 20px; margin: 1px 0 0; flex: none; }
+.btn { display: block; width: 100%; padding: 14px; margin-top: 16px; font: 600 16px/1 inherit; font-family: inherit;
+       border-radius: 12px; border: 0; background: var(--accent); color: var(--accent-text); }
+.btn.secondary { background: var(--chip); color: var(--text); font-weight: 500; }
+.btn:disabled { opacity: .5; }
+.drop { display: block; border: 2px dashed var(--line); border-radius: 12px; padding: 22px 12px; text-align: center; color: var(--muted); cursor: pointer; }
+.drop strong { color: var(--text); display: block; font-size: 17px; margin-bottom: 4px; word-break: break-all; }
+.drop input { display: none; }
+.row { display: flex; gap: 10px; }
+.row > div { flex: 1; min-width: 0; }
+.hint { font-size: 13px; color: var(--muted); margin: 6px 0 0; }
+.job { border-top: 1px solid var(--line); padding: 12px 0; }
+.job:first-of-type { border-top: 0; padding-top: 0; }
+.job .name { font-weight: 600; word-break: break-all; }
+.job .msg { font-size: 14px; margin-top: 2px; }
+.state { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.s-done { color: var(--ok); } .s-error { color: var(--bad); } .s-slicing, .s-uploading, .s-checking, .s-queued { color: var(--warn); }
+details summary { font-size: 13px; color: var(--muted); margin-top: 6px; cursor: pointer; }
+pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--bg); padding: 8px; border-radius: 8px; max-height: 260px; overflow: auto; }
+.bar { height: 10px; border-radius: 999px; background: var(--chip); overflow: hidden; margin: 10px 0 4px; }
+.bar > span { display: block; height: 100%; background: var(--accent); width: 0; }
+.stat { display: flex; justify-content: space-between; padding: 6px 0; border-top: 1px solid var(--line); font-size: 15px; }
+.stat:first-child { border-top: 0; }
+.notice { padding: 10px 12px; border-radius: 10px; background: var(--chip); font-size: 14px; margin-top: 10px; }
+.notice.bad { color: var(--bad); }
+.notice.ok { color: var(--ok); }
+.hidden { display: none !important; }
+ol { padding-left: 20px; margin: 6px 0 0; } ol li { margin: 4px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Q2 Print Bridge</h1>
+  <span id="printerPill">Checking printer…</span>
+</header>
+<nav>
+  <button data-tab="print" class="on">Print</button>
+  <button data-tab="printer">Printer</button>
+  <button data-tab="settings">Settings</button>
+</nav>
+<main>
+  <!-- PIN -->
+  <section id="pinBox" class="card hidden">
+    <h2>Enter the bridge PIN</h2>
+    <input id="pinInput" type="password" inputmode="numeric" autocomplete="current-password">
+    <button class="btn" id="pinBtn">Unlock</button>
+  </section>
+
+  <!-- PRINT -->
+  <section id="tab-print">
+    <div class="card">
+      <h2>Send a model to your Q2</h2>
+      <label class="drop" id="drop">
+        <strong id="fileLabel">Tap to choose a file</strong>
+        <span id="fileSub">.3mf, .stl, .obj, .step or .gcode</span>
+        <input id="file" type="file" accept=".3mf,.stl,.obj,.step,.stp,.amf,.gcode,model/3mf,model/stl,application/octet-stream">
+      </label>
+      <div class="row">
+        <div>
+          <label for="quality">Quality</label>
+          <select id="quality"></select>
+        </div>
+        <div style="max-width:110px">
+          <label for="plate">Plate</label>
+          <input id="plate" type="number" min="1" value="1" inputmode="numeric">
+        </div>
+      </div>
+      <label for="filament">Filament</label>
+      <select id="filament"></select>
+      <div class="check"><input type="checkbox" id="startNow" checked><span>Start printing straight away</span></div>
+      <div class="check hidden" id="trustRow"><input type="checkbox" id="trustGcode"><span>This G-code was made for my Q2</span></div>
+      <button class="btn" id="sendBtn" disabled>Print on Q2</button>
+      <div id="sendNote" class="notice hidden"></div>
+    </div>
+    <div class="card">
+      <h2>Recent jobs</h2>
+      <div id="jobs"><p class="hint">Nothing sent yet.</p></div>
+    </div>
+    <div class="card">
+      <h2>Getting a model from Bambu Handy / MakerWorld</h2>
+      <ol>
+        <li>Find the model on MakerWorld (in your phone's browser or from Handy's share button, which opens it in the browser).</li>
+        <li>Tap <b>Download</b> and save the <b>.3mf</b> (or .stl) to your phone.</li>
+        <li>Come back here, tap <b>Choose a file</b>, pick it, then <b>Print on Q2</b>.</li>
+      </ol>
+      <p class="hint">The bridge re-slices Bambu files with QIDI Q2 settings, so they print correctly on the Q2.</p>
+    </div>
+  </section>
+
+  <!-- PRINTER -->
+  <section id="tab-printer" class="hidden">
+    <div class="card">
+      <h2>Printer status</h2>
+      <div id="pstatus"><p class="hint">Loading…</p></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="tab-settings" class="hidden">
+    <div class="card">
+      <h2>Your QIDI Q2</h2>
+      <label for="s_host">Printer IP address</label>
+      <input id="s_host" type="text" placeholder="e.g. 192.168.1.50" inputmode="decimal" autocomplete="off">
+      <p class="hint">On the Q2's screen: Settings → Network shows the IP address.</p>
+      <div class="row">
+        <div><label for="s_port">Port</label><input id="s_port" type="number" value="7125"></div>
+        <div><label for="s_key">API key (usually blank)</label><input id="s_key" type="password" autocomplete="off"></div>
+      </div>
+      <button class="btn secondary" id="testBtn">Test connection</button>
+      <div id="testNote" class="notice hidden"></div>
+    </div>
+    <div class="card">
+      <h2>Slicing</h2>
+      <label for="s_slicer">Slicer program</label>
+      <input id="s_slicer" type="text" placeholder="Found automatically if installed">
+      <p class="hint" id="slicerHint"></p>
+      <label for="s_machine">Printer profile</label>
+      <select id="s_machine"></select>
+      <label for="s_process">Default quality</label>
+      <select id="s_process"></select>
+      <label for="s_filament">Default filament</label>
+      <select id="s_filament"></select>
+      <div class="check"><input type="checkbox" id="s_box"><span>I have a QIDI Box (keep colours in multi-colour models)</span></div>
+      <div class="check"><input type="checkbox" id="s_start"><span>Tick "Start printing straight away" by default</span></div>
+    </div>
+    <div class="card">
+      <h2>Security</h2>
+      <label for="s_pin">PIN for this page (optional)</label>
+      <input id="s_pin" type="password" inputmode="numeric" placeholder="Leave blank to keep the current setting" autocomplete="new-password">
+      <p class="hint" id="pinHint"></p>
+    </div>
+    <div class="card">
+      <h2>Bambu Studio printer</h2>
+      <p class="hint">Makes this PC show up in Bambu Studio as a Bambu printer. Anything you print to it is re-sliced for the Q2 and sent on. First run <b>Set up Bambu Studio.bat</b> once.</p>
+      <div class="check"><input type="checkbox" id="s_studio"><span>Show up as a printer in Bambu Studio</span></div>
+      <div id="studioInfo" class="notice hidden"></div>
+    </div>
+    <button class="btn" id="saveBtn">Save settings</button>
+    <div id="saveNote" class="notice hidden"></div>
+    <div class="card" style="margin-top:14px">
+      <h2>Open this page on your phone</h2>
+      <div id="addresses" class="hint"></div>
+    </div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let PIN = '';
+try { PIN = localStorage.getItem('bridgePin') || ''; } catch (e) {}
+let STATE = null;
+
+async function api(path, opts = {}) {
+  opts.headers = Object.assign({}, opts.headers || {}, PIN ? { 'X-Bridge-Pin': PIN } : {});
+  const r = await fetch(path, opts);
+  const data = await r.json().catch(() => ({ ok: false, error: 'Bad answer from the bridge' }));
+  if (r.status === 401) { showPin(); throw new Error(data.error || 'PIN needed'); }
+  return data;
+}
+
+function showPin() { $('pinBox').classList.remove('hidden'); }
+$('pinBtn').onclick = () => {
+  PIN = $('pinInput').value.trim();
+  try { localStorage.setItem('bridgePin', PIN); } catch (e) {}
+  $('pinBox').classList.add('hidden');
+  boot();
+};
+
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
+  ['print', 'printer', 'settings'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
+  if (b.dataset.tab === 'printer') refreshPrinter();
+});
+
+function fillSelect(sel, items, value) {
+  sel.innerHTML = '';
+  const list = items.slice();
+  if (value && !list.includes(value)) list.unshift(value);
+  for (const it of list) {
+    const o = document.createElement('option');
+    o.value = it; o.textContent = it; if (it === value) o.selected = true;
+    sel.appendChild(o);
+  }
+}
+
+function note(el, text, kind) {
+  el.textContent = text; el.className = 'notice' + (kind ? ' ' + kind : '');
+  el.classList.toggle('hidden', !text);
+}
+
+async function loadPresets(machine, refresh) {
+  const q = new URLSearchParams({ machine: machine || '', refresh: refresh ? '1' : '0' });
+  const p = await api('/api/presets?' + q);
+  const c = STATE.config;
+  if (!p.ok) { $('slicerHint').textContent = p.error; return; }
+  fillSelect($('s_machine'), p.machine, machine || c.machine_preset);
+  fillSelect($('s_process'), p.process, c.process_preset);
+  fillSelect($('s_filament'), p.filament, c.filament_preset);
+  fillSelect($('quality'), p.process, c.process_preset);
+  fillSelect($('filament'), p.filament, c.filament_preset);
+}
+
+async function boot() {
+  try { STATE = await api('/api/state'); } catch (e) { return; }
+  const c = STATE.config;
+  $('s_host').value = c.printer_host; $('s_port').value = c.printer_port; $('s_key').value = c.printer_api_key;
+  $('s_slicer').value = c.slicer_path; $('s_box').checked = c.qidi_box; $('s_start').checked = c.start_print;
+  $('startNow').checked = c.start_print;
+  $('s_studio').checked = c.virtual_printer_enabled;
+  const st = STATE.studio || {};
+  if (st.running) note($('studioInfo'), `On. In Bambu Studio look for "${st.name}" (IP ${st.ip}). Access code: ${st.access_code}`, 'ok');
+  else if (st.enabled) note($('studioInfo'), 'Switched on, but not running yet. Close the bridge window and start it again.', '');
+  else note($('studioInfo'), '');
+  $('slicerHint').textContent = STATE.slicer ? 'Using: ' + STATE.slicer : STATE.slicer_error;
+  $('pinHint').textContent = STATE.pin_set ? 'A PIN is set. Enter a new one to change it, or a single space to remove it.' : 'No PIN set. Anyone on your Wi-Fi can use this page.';
+  $('addresses').innerHTML = (STATE.addresses || []).map(a => `<div><b>${a}</b></div>`).join('') || 'Unknown';
+  if (!c.printer_host) document.querySelector('nav button[data-tab=settings]').click();
+  await loadPresets(c.machine_preset);
+  refreshJobs(); refreshPrinter();
+}
+
+$('s_machine').onchange = () => loadPresets($('s_machine').value);
+
+$('file').onchange = () => {
+  const f = $('file').files[0];
+  $('fileLabel').textContent = f ? f.name : 'Tap to choose a file';
+  $('fileSub').textContent = f ? (f.size / 1048576).toFixed(1) + ' MB' : '.3mf, .stl, .obj, .step or .gcode';
+  $('trustRow').classList.toggle('hidden', !(f && f.name.toLowerCase().endsWith('.gcode')));
+  $('sendBtn').disabled = !f;
+};
+
+$('sendBtn').onclick = () => {
+  const f = $('file').files[0];
+  if (!f) return;
+  $('sendBtn').disabled = true;
+  note($('sendNote'), 'Sending to the bridge… 0%');
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/jobs');
+  xhr.setRequestHeader('X-Filename', encodeURIComponent(f.name));
+  xhr.setRequestHeader('X-Plate', $('plate').value || '1');
+  xhr.setRequestHeader('X-Start', $('startNow').checked ? '1' : '0');
+  xhr.setRequestHeader('X-Trust-Gcode', $('trustGcode').checked ? '1' : '0');
+  xhr.setRequestHeader('X-Process', encodeURIComponent($('quality').value || ''));
+  xhr.setRequestHeader('X-Filament', encodeURIComponent($('filament').value || ''));
+  if (PIN) xhr.setRequestHeader('X-Bridge-Pin', PIN);
+  xhr.upload.onprogress = (e) => { if (e.lengthComputable) note($('sendNote'), 'Sending to the bridge… ' + Math.round(e.loaded * 100 / e.total) + '%'); };
+  xhr.onload = () => {
+    $('sendBtn').disabled = false;
+    let d = {}; try { d = JSON.parse(xhr.responseText); } catch (e) {}
+    if (xhr.status === 401) { showPin(); note($('sendNote'), 'Enter the PIN first.', 'bad'); return; }
+    if (d.ok) { note($('sendNote'), 'Got it. Follow the progress under Recent jobs.', 'ok'); refreshJobs(); }
+    else note($('sendNote'), d.error || 'Something went wrong.', 'bad');
+  };
+  xhr.onerror = () => { $('sendBtn').disabled = false; note($('sendNote'), 'Could not reach the bridge. Is the PC on and the bridge running?', 'bad'); };
+  xhr.send(f);
+};
+
+const LABEL = { queued: 'Waiting', checking: 'Checking', slicing: 'Slicing', uploading: 'Sending', done: 'Done', error: 'Problem' };
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+let openLogs = new Set();
+async function refreshJobs() {
+  let d; try { d = await api('/api/jobs'); } catch (e) { return; }
+  if (!d.ok) return;
+  document.querySelectorAll('#jobs details[open]').forEach(x => openLogs.add(x.dataset.id));
+  $('jobs').innerHTML = d.jobs.length ? d.jobs.map(j => `
+    <div class="job">
+      <div class="state s-${j.state}">${LABEL[j.state] || j.state}</div>
+      <div class="name">${esc(j.filename)}</div>
+      <div class="msg">${esc(j.message)}</div>
+      <details data-id="${j.id}" ${openLogs.has(j.id) ? 'open' : ''}><summary>Details</summary><pre>${esc(j.log.join('\n'))}</pre></details>
+    </div>`).join('') : '<p class="hint">Nothing sent yet.</p>';
+  document.querySelectorAll('#jobs details').forEach(x => x.ontoggle = () => { x.open ? openLogs.add(x.dataset.id) : openLogs.delete(x.dataset.id); });
+}
+
+function fmtTime(s) { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? `${h} h ${m} min` : `${m} min`; }
+async function refreshPrinter() {
+  let d; try { d = await api('/api/printer'); } catch (e) { return; }
+  const pill = $('printerPill');
+  if (!d.ok) {
+    pill.textContent = 'Printer offline';
+    $('pstatus').innerHTML = `<p class="notice bad">${esc(d.error)}</p>`;
+    return;
+  }
+  const s = d.status, ps = s.print_stats || {}, ds = s.display_status || {};
+  const state = ps.state || 'unknown';
+  pill.textContent = 'Q2: ' + state;
+  const pct = Math.round((ds.progress || (s.virtual_sdcard || {}).progress || 0) * 100);
+  const ex = s.extruder || {}, bed = s.heater_bed || {};
+  const left = pct > 0 && ps.print_duration ? ps.print_duration * (100 - pct) / pct : 0;
+  $('pstatus').innerHTML = `
+    ${state === 'printing' || state === 'paused' ? `<div class="bar"><span style="width:${pct}%"></span></div><p class="hint">${pct}% · about ${fmtTime(left)} left</p>` : ''}
+    <div class="stat"><span>State</span><b>${esc(state)}</b></div>
+    <div class="stat"><span>File</span><b style="word-break:break-all;text-align:right">${esc(ps.filename || '-')}</b></div>
+    <div class="stat"><span>Nozzle</span><b>${Math.round(ex.temperature || 0)}° / ${Math.round(ex.target || 0)}°</b></div>
+    <div class="stat"><span>Bed</span><b>${Math.round(bed.temperature || 0)}° / ${Math.round(bed.target || 0)}°</b></div>`;
+}
+
+$('testBtn').onclick = async () => {
+  note($('testNote'), 'Testing…');
+  const d = await api('/api/test-printer', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ printer_host: $('s_host').value, printer_port: $('s_port').value }) });
+  if (d.ok) note($('testNote'), `Connected to ${d.info.hostname || 'the printer'} (Klipper is ${d.info.state || 'running'}). Remember to Save.`, 'ok');
+  else note($('testNote'), d.error, 'bad');
+};
+
+$('saveBtn').onclick = async () => {
+  const body = {
+    printer_host: $('s_host').value, printer_port: $('s_port').value, printer_api_key: $('s_key').value,
+    slicer_path: $('s_slicer').value, machine_preset: $('s_machine').value, process_preset: $('s_process').value,
+    filament_preset: $('s_filament').value, qidi_box: $('s_box').checked, start_print: $('s_start').checked,
+    virtual_printer_enabled: $('s_studio').checked,
+  };
+  const pin = $('s_pin').value;
+  if (pin) body.pin = pin.trim();
+  const d = await api('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (d.ok) {
+    if (pin) { PIN = pin.trim(); try { localStorage.setItem('bridgePin', PIN); } catch (e) {} $('s_pin').value = ''; }
+    note($('saveNote'), 'Saved.', 'ok');
+    boot();
+  } else note($('saveNote'), d.error || 'Could not save.', 'bad');
+};
+
+(async () => {
+  try {
+    const h = await (await fetch('/api/hello')).json();
+    if (h.pin_required && !PIN) { showPin(); return; }
+  } catch (e) {}
+  boot();
+  setInterval(refreshJobs, 3000);
+  setInterval(refreshPrinter, 10000);
+})();
+</script>
+</body>
+</html>
