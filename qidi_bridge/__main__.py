@@ -10,7 +10,7 @@ from .webserver import local_ips, serve
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="qidi_bridge", description="Print to a QIDI Q2 from your phone.")
+    ap = argparse.ArgumentParser(prog="qidi_bridge", description="Print to a QIDI printer from your phone.")
     ap.add_argument("--port", type=int, help="web page port (default 8765)")
     ap.add_argument("--host", default="0.0.0.0", help="network address to listen on")
     ap.add_argument("command", nargs="?", default="run", choices=["run", "setup-studio"],
@@ -22,13 +22,13 @@ def main(argv=None) -> int:
     cfg = config.load()
     httpd = serve(args.port, args.host)
     port = httpd.server_address[1]
-    print(f"QIDI Q2 bridge {__version__} is running.")
+    print(f"QIDI print bridge {__version__} is running.")
     print("Open one of these on your phone (same Wi-Fi as this PC):")
     for ip in local_ips() or ["<this-pc-ip>"]:
         print(f"    http://{ip}:{port}")
     print(f"On this PC: http://localhost:{port}")
     if not cfg.get("printer_host"):
-        print("First time? Open the page and go to Settings to enter your Q2's IP address.")
+        print("First time? Open the page and it will help you find your printer.")
     if cfg.get("virtual_printer_enabled"):
         try:
             from .virtual_printer import start_virtual_printer

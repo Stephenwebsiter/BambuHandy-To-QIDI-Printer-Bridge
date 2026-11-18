@@ -1,0 +1,29 @@
+{
+  "objects": ["save_variables", "box_extras", "multi_color_controller", "box_stepper slot0", "box_stepper slot1",
+              "box_stepper slot2", "box_stepper slot3", "extruder", "print_stats"],
+  "status": {
+    "save_variables": {"variables": {"box_count": 1, "enable_box": 1, "last_load_slot": "slot3", "slot_sync": "slot3",
+      "slot0": 1, "filament_slot0": "QFB91", "color_slot0": ["FAFAFA"], "vendor_slot0": 1, "value_t0": "slot3",
+      "slot1": 1, "filament_slot1": "QFA00", "color_slot1": ["FF362D"], "vendor_slot1": 1,
+      "slot2": 1, "filament_slot2": "QFA00", "color_slot2": ["DFD628"], "vendor_slot2": 1,
+      "slot3": 2, "filament_slot3": "QFA00", "color_slot3": ["1353AB"], "vendor_slot3": 1}},
+    "box_stepper slot0": {"runout_button": 0, "rfid_state": 0},
+    "box_stepper slot1": {"runout_button": 0, "rfid_state": 0},
+    "box_stepper slot2": {"runout_button": 0, "rfid_state": 0},
+    "box_stepper slot3": {"runout_button": 0, "rfid_state": 0},
+    "multi_color_controller": {},
+    "box_extras": {"last_load_slot": "slot3", "loaded_slot": "slot3", "is_tool_change": 0, "auto_refill": [],
+      "boxes": [
+        {"aht20_humidity": 59, "aht20_temp": 24.37, "is_online": 1, "dry_state": 0,
+         "filament_info": [
+          {"index": 0, "filament_id": "QFB91", "vendor_str": "Generic", "filament_str": "ABS", "filament_type": "ABS", "color_rgb_str": ["#FAFAFA"], "min_temp": 240, "max_temp": 280, "info_from_rfid": 0},
+          {"index": 1, "filament_id": "QFA00", "vendor_str": "QIDI", "filament_str": "PLA Basic", "filament_type": "PLA", "color_rgb_str": ["#FF362D"], "min_temp": 190, "max_temp": 240, "info_from_rfid": 0},
+          {"index": 2, "filament_id": "QFA00", "vendor_str": "QIDI", "filament_str": "PLA Basic", "filament_type": "PLA", "color_rgb_str": ["#DFD628"], "min_temp": 190, "max_temp": 240, "info_from_rfid": 0},
+          {"index": 3, "filament_id": "QFA00", "vendor_str": "QIDI", "filament_str": "PLA Basic", "filament_type": "PLA", "color_rgb_str": ["#1353AB"], "min_temp": 190, "max_temp": 240, "info_from_rfid": 0}]},
+        {"is_online": 0, "filament_info": [{"index": 0, "filament_id": "QFA00", "vendor_str": "QIDI", "filament_str": "PLA Basic", "filament_type": "PLA", "color_rgb_str": ["#FAFAFA"]}]},
+        {"is_online": 0, "filament_info": []},
+        {"is_online": 0, "filament_info": []}
+      ]}
+  },
+  "filas_list": "[fila1]\nfilament = PLA Rapido\nmin_temp = 190\nmax_temp = 240\nbox_min_temp = 0\nbox_max_temp = 0\ntype = PLA\n\n[fila2]\nfilament = PLA Matte\nmin_temp = 190\nmax_temp = 240\ntype = PLA\n\n[colordict]\n1 = #FAFAFA\n2 = #060606\n8 = #DFD628\n14 = #1353AB\n18 = #FF362D\n\n[vendor_list]\n0 = Generic\n1 = QIDI\n"
+}

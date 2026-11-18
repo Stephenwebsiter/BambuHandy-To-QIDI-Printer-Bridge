@@ -14,6 +14,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if "QIDI_BRIDGE_DATA" not in os.environ:
     os.environ["QIDI_BRIDGE_DATA"] = os.path.join(tempfile.mkdtemp(prefix="qidi-vp-test-"), "data")
+os.environ.setdefault("QIDI_BRIDGE_PROFILE_URL", "http://127.0.0.1:9")
 
 from tests import helpers  # noqa: E402
 from qidi_bridge import certs, config, virtual_printer  # noqa: E402

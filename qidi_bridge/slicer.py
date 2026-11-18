@@ -11,33 +11,121 @@ import sys
 from . import profile_fetch, profiles, threemf
 
 
+DEFAULT_MACHINE = "Qidi Q2 0.4 nozzle"
+
+
+# Bed plates OrcaSlicer knows, with the filament setting that holds each plate's bed temperature.
+PLATES = {
+    "Textured PEI Plate": "textured_plate_temp",
+    "High Temp Plate": "hot_plate_temp",
+    "Engineering Plate": "eng_plate_temp",
+    "Cool Plate": "cool_plate_temp",
+    "Textured Cool Plate": "textured_cool_plate_temp",
+    "Supertack Plate": "supertack_plate_temp",
+}
+PLATE_LABELS = {
+    "Textured PEI Plate": "Textured PEI (gold/black, rough)",
+    "High Temp Plate": "Smooth PEI / High Temp plate",
+    "Engineering Plate": "Engineering plate",
+    "Cool Plate": "Smooth Cool plate",
+    "Textured Cool Plate": "Textured Cool plate",
+    "Supertack Plate": "SuperTack plate",
+}
+DEFAULT_PLATE = "Textured PEI Plate"
+
+
+def _num(v, default=0.0) -> float:
+    if isinstance(v, list):
+        v = v[0] if v else default
+    try:
+        return float(str(v).rstrip("%"))
+    except (TypeError, ValueError):
+        return default
+
+
+def _fmt(x: float) -> str:
+    return str(int(x)) if float(x).is_integer() else str(x)
+
+
+def process_overrides(data: dict, plate: str, grip: bool) -> dict:
+    """Quality settings changed for the bed plate and, with `grip`, for a first layer that sticks well."""
+    over = {"curr_bed_type": plate if plate in PLATES else DEFAULT_PLATE}
+    if grip:
+        # A slower first layer presses the plastic onto the bed instead of dragging it.
+        for key, limit in (("initial_layer_speed", 35), ("initial_layer_infill_speed", 60)):
+            cur = _num(data.get(key), limit)
+            if cur <= 0 or cur > limit:
+                over[key] = _fmt(limit)
+        if str(data.get("brim_type", "auto_brim")) == "no_brim":
+            over["brim_type"] = "auto_brim"
+    return over
+
+
+def filament_overrides(data: dict, plate: str, grip: bool) -> dict:
+    over = {}
+    if grip:
+        # Keep the part-cooling fan off for the first 3 layers so they stay warm and stick.
+        if _num(data.get("close_fan_the_first_x_layers"), 1) < 3:
+            over["close_fan_the_first_x_layers"] = ["3"]
+    key = PLATES.get(plate, PLATES[DEFAULT_PLATE])
+    first = _num(data.get(key + "_initial_layer"), 0)
+    later = _num(data.get(key), 0)
+    if grip and first > 0 and later > 0 and first < later + 5 and normalize_family(data) in ("PLA", "PETG"):
+        # A few degrees warmer for the first layer only helps PLA/PETG grip, without warping.
+        over[key + "_initial_layer"] = [_fmt(later + 5)]
+    return over
+
+
+def normalize_family(data: dict) -> str:
+    t = data.get("filament_type")
+    if isinstance(t, list):
+        t = t[0] if t else ""
+    return str(t or "").upper().split("-")[0]
+
+
+def bed_temp(data: dict, plate: str) -> tuple[int, int]:
+    key = PLATES.get(plate, PLATES[DEFAULT_PLATE])
+    return int(_num(data.get(key + "_initial_layer"), 0)), int(_num(data.get(key), 0))
+
+
 class SliceError(Exception):
     pass
 
 
-_LIB_CACHE: dict[str, profiles.PresetLibrary] = {}
+_LIB_CACHE: dict[tuple, profiles.PresetLibrary] = {}
 
 
-def library(slicer_exe: str, refresh: bool = False, log=None) -> profiles.PresetLibrary:
-    """Presets for the Q2: from the slicer's own folders, or downloaded if the slicer keeps them packed."""
-    key = os.path.abspath(slicer_exe) if slicer_exe else ""
+def library(slicer_exe: str, refresh: bool = False, log=None, machine: str | None = None) -> profiles.PresetLibrary:
+    """Presets for the chosen QIDI printer: from the slicer's own folders, or downloaded if it keeps them packed."""
+    machine = machine or DEFAULT_MACHINE
+    key = (os.path.abspath(slicer_exe) if slicer_exe else "", machine)
     if refresh or key not in _LIB_CACHE:
         roots = profiles.profile_roots_for(slicer_exe)
         if profile_fetch.have_cache():
             roots.append((profile_fetch.CACHE_ROOT, False))
         lib = profiles.PresetLibrary(roots)
-        if not any("q2" in n.lower() for n in lib.names("machine")):
+        if machine not in lib.names("machine"):
+            marker = profile_fetch.marker_for(machine)
             try:
-                profile_fetch.fetch_q2_profiles(log or print)
+                profile_fetch.fetch_profiles(log or print, marker)
             except OSError as e:
                 raise SliceError(
-                    "This slicer's QIDI Q2 settings can't be read, and downloading them failed "
-                    f"({e}). Check the PC's internet connection and try again."
+                    f"The settings for the {profiles.model_of(machine)} can't be read from this slicer, and "
+                    f"downloading them failed ({e}). Check the PC's internet connection and try again."
                 ) from e
             roots = profiles.profile_roots_for(slicer_exe) + [(profile_fetch.CACHE_ROOT, False)]
             lib = profiles.PresetLibrary(roots)
         _LIB_CACHE[key] = lib
     return _LIB_CACHE[key]
+
+
+def default_process(names: list[str]) -> str:
+    """The everyday quality preset: '0.20mm Standard' when there is one."""
+    for want in ("0.20mm standard", "standard", "0.20mm"):
+        hit = [n for n in names if want in n.lower()]
+        if hit:
+            return min(hit, key=len)
+    return names[0] if names else ""
 
 
 def resolve_slicer(cfg: dict) -> str:
@@ -124,60 +212,110 @@ def run_cli(exe: str, inputs: list[str], settings: list[str], filaments: list[st
     raise SliceError(f"The slicer could not slice this model: {reason}")
 
 
-def slice_files_for_q2(cfg: dict, files: list[str], work_dir: str, log,
-                       process: str | None = None, filament: str | None = None) -> str:
-    """Slice several plain model files together on one plate."""
-    exe, m_file, p_file, f_file = _prepare(cfg, work_dir, log, process, filament)
-    return run_cli(exe, files, [m_file, p_file], [f_file], os.path.join(work_dir, "out"), 0, True, log)
+class Plan:
+    """What to slice with: printer, quality, and one filament (preset + colour) per tool."""
+
+    def __init__(self, machine: str, process: str, filaments: list[str], colours: list[str] | None = None,
+                 plate: str = DEFAULT_PLATE, grip: bool = True):
+        self.machine = machine
+        self.process = process
+        self.filaments = filaments
+        self.colours = colours or []
+        self.plate = plate if plate in PLATES else DEFAULT_PLATE
+        self.grip = grip
 
 
-def _prepare(cfg, work_dir, log, process, filament):
-    exe = resolve_slicer(cfg)
-    lib = library(exe, log=log)
-    machine = cfg.get("machine_preset") or "Qidi Q2 0.4 nozzle"
-    process = process or cfg.get("process_preset")
-    filament = filament or cfg.get("filament_preset")
-    log(f"Slicer: {exe}")
-    log(f"Settings: printer '{machine}', quality '{process}', filament '{filament}'")
+def make_plan(cfg: dict, process: str | None = None, filament: str | None = None,
+              filaments: list[str] | None = None, colours: list[str] | None = None) -> Plan:
+    fils = [f for f in (filaments or []) if f] or [filament or cfg.get("filament_preset")]
+    return Plan(cfg.get("machine_preset") or DEFAULT_MACHINE, process or cfg.get("process_preset"),
+                fils, colours, cfg.get("bed_type") or DEFAULT_PLATE, bool(cfg.get("extra_grip", True)))
+
+
+def _write_presets(lib, plan: Plan, work_dir: str, log, count: int):
     preset_dir = os.path.join(work_dir, "presets")
+    proc = lib.find("process", plan.process or "")
+    if proc is None or not proc.compatible_with(plan.machine):
+        better = default_process(lib.names("process", plan.machine))
+        if better:
+            log(f"The quality '{plan.process}' doesn't fit {plan.machine}; using '{better}'.")
+            plan.process = better
+    for i, name in enumerate(plan.filaments):
+        fp = lib.find("filament", name or "")
+        if fp is None or not fp.compatible_with(plan.machine):
+            fam = profiles.preset_filament_type(lib, name) if fp else ""
+            better = profiles.match_filament_preset(lib, plan.machine, "", "", fam or "PLA", "")
+            if better and better != name:
+                log(f"The filament '{name}' doesn't fit {plan.machine}; using '{better}'.")
+                plan.filaments[i] = better
+    log(f"Settings: printer '{plan.machine}', quality '{plan.process}', plate '{plan.plate}'"
+        + (", extra bed grip" if plan.grip else ""))
     try:
-        return (exe, lib.write_resolved("machine", machine, preset_dir),
-                lib.write_resolved("process", process, preset_dir),
-                lib.write_resolved("filament", filament, preset_dir))
+        m_file = lib.write_resolved("machine", plan.machine, preset_dir)
+        p_over = process_overrides(lib.resolve("process", plan.process), plan.plate, plan.grip)
+        p_file = lib.write_resolved("process", plan.process, preset_dir, p_over)
+        f_files = []
+        for i in range(count):
+            name = plan.filaments[i] if i < len(plan.filaments) else plan.filaments[-1]
+            data = lib.resolve("filament", name)
+            over = filament_overrides(data, plan.plate, plan.grip)
+            colour = plan.colours[i] if i < len(plan.colours) and plan.colours[i] else ""
+            if colour:
+                over["filament_colour"] = [colour]
+            first_bed, bed = bed_temp(dict(data, **over), plan.plate)
+            if bed <= 0:
+                log(f"Warning: '{name}' is not meant for the {plan.plate}.")
+            f_files.append(lib.write_resolved("filament", name, preset_dir, over, tag=f"{i + 1}"))
+            log(f"Filament {i + 1}: '{name}'" + (f" colour {colour}" if colour else "")
+                + f", bed {first_bed}°C first layer then {bed}°C")
     except KeyError as e:
         raise SliceError(str(e.args[0]) + " Pick another one in Settings.") from e
+    return m_file, p_file, f_files
+
+
+def slice_files_for_q2(cfg: dict, files: list[str], work_dir: str, log,
+                       process: str | None = None, filament: str | None = None, plan: Plan | None = None) -> str:
+    """Slice several plain model files together on one plate."""
+    plan = plan or make_plan(cfg, process, filament)
+    exe = resolve_slicer(cfg)
+    lib = library(exe, log=log, machine=plan.machine)
+    log(f"Slicer: {exe}")
+    m_file, p_file, f_files = _write_presets(lib, plan, work_dir, log, 1)
+    return run_cli(exe, files, [m_file, p_file], f_files, os.path.join(work_dir, "out"), 0, True, log)
 
 
 def slice_for_q2(cfg: dict, src: str, plate: int, work_dir: str, log,
-                 process: str | None = None, filament: str | None = None) -> str:
-    """Slice `src` with QIDI Q2 settings and return the path of the resulting G-code."""
+                 process: str | None = None, filament: str | None = None, plan: Plan | None = None,
+                 multicolour: bool | None = None) -> str:
+    """Slice `src` for the configured QIDI printer and return the path of the resulting G-code.
+
+    With a QIDI Box (`multicolour` true) every colour of a project keeps its own filament;
+    otherwise the whole model is printed with the first filament.
+    """
+    plan = plan or make_plan(cfg, process, filament)
     exe = resolve_slicer(cfg)
-    lib = library(exe, log=log)
-    machine = cfg.get("machine_preset") or "Qidi Q2 0.4 nozzle"
-    process = process or cfg.get("process_preset")
-    filament = filament or cfg.get("filament_preset")
+    lib = library(exe, log=log, machine=plan.machine)
     log(f"Slicer: {exe}")
-    log(f"Settings: printer '{machine}', quality '{process}', filament '{filament}'")
-    preset_dir = os.path.join(work_dir, "presets")
-    try:
-        m_file = lib.write_resolved("machine", machine, preset_dir)
-        p_file = lib.write_resolved("process", process, preset_dir)
-        f_file = lib.write_resolved("filament", filament, preset_dir)
-    except KeyError as e:
-        raise SliceError(str(e.args[0]) + " Pick another one in Settings.") from e
+    if multicolour is None:
+        multicolour = False
 
     lower = src.lower()
     if lower.endswith(".3mf"):
         colours = project_filament_count(src)
-        if colours > 1 and not cfg.get("qidi_box"):
+        if colours > 1 and not multicolour:
             log(f"This project uses {colours} colours. Without a QIDI Box it will be printed in one colour.")
+            m_file, p_file, f_files = _write_presets(lib, plan, work_dir, log, 1)
             meshes = threemf.export_plate_meshes(src, plate, os.path.join(work_dir, "meshes"))
-            return run_cli(exe, meshes, [m_file, p_file], [f_file], os.path.join(work_dir, "out"), 0, True, log)
+            return run_cli(exe, meshes, [m_file, p_file], f_files, os.path.join(work_dir, "out"), 0, True, log)
+        m_file, p_file, f_files = _write_presets(lib, plan, work_dir, log, colours)
         try:
-            return run_cli(exe, [src], [m_file, p_file], [f_file] * colours,
-                           os.path.join(work_dir, "out"), plate, False, log)
+            return run_cli(exe, [src], [m_file, p_file], f_files, os.path.join(work_dir, "out"), plate, False, log)
         except SliceError as first:
+            if colours > 1:
+                raise SliceError(f"{first} Multi-colour projects can't fall back to a one-colour slice "
+                                 "automatically. Pick the same Box slot for every colour to print it in one colour.")
             log(f"Slicing the project file directly did not work ({first}). Trying again with just the shapes.")
             meshes = threemf.export_plate_meshes(src, plate, os.path.join(work_dir, "meshes"))
-            return run_cli(exe, meshes, [m_file, p_file], [f_file], os.path.join(work_dir, "out2"), 0, True, log)
-    return run_cli(exe, [src], [m_file, p_file], [f_file], os.path.join(work_dir, "out"), 0, True, log)
+            return run_cli(exe, meshes, [m_file, p_file], f_files[:1], os.path.join(work_dir, "out2"), 0, True, log)
+    m_file, p_file, f_files = _write_presets(lib, plan, work_dir, log, 1)
+    return run_cli(exe, [src], [m_file, p_file], f_files, os.path.join(work_dir, "out"), 0, True, log)

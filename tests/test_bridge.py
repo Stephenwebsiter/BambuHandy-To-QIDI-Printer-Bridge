@@ -10,6 +10,8 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TMP = tempfile.mkdtemp(prefix="qidi-bridge-test-")
 os.environ["QIDI_BRIDGE_DATA"] = os.path.join(TMP, "data")
+# Never reach the internet from the tests.
+os.environ.setdefault("QIDI_BRIDGE_PROFILE_URL", "http://127.0.0.1:9")
 
 from tests import helpers  # noqa: E402
 from qidi_bridge import config, profiles, slicer, threemf  # noqa: E402
@@ -179,10 +181,12 @@ class EndToEndTests(unittest.TestCase):
 
     def test_page_and_presets(self):
         with urllib.request.urlopen(self.base + "/") as r:
-            self.assertIn(b"Q2 Print Bridge", r.read())
+            self.assertIn(b"QIDI Print Bridge", r.read())
         with urllib.request.urlopen(self.base + "/api/presets") as r:
             p = json.loads(r.read())
         self.assertEqual(p["machine"], ["Qidi Q2 0.4 nozzle"])
+        self.assertEqual(p["model"], "Q2")
+        self.assertTrue(p["default_process"])
         self.assertIn("QIDI PLA Rapido @Qidi Q2 0.4 nozzle", p["filament"])
 
 

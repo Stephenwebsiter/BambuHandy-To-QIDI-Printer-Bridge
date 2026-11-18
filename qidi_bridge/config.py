@@ -11,18 +11,25 @@ DATA_DIR = os.environ.get("QIDI_BRIDGE_DATA") or os.path.join(ROOT, "data")
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
 
 DEFAULTS = {
-    # The QIDI Q2 on your network
+    # The QIDI printer on your network
     "printer_host": "",
     "printer_port": 7125,
     "printer_api_key": "",
-    # Slicer used to prepare models for the Q2 (OrcaSlicer or QIDI Studio)
+    # Slicer used to prepare models for the printer (OrcaSlicer or QIDI Studio)
     "slicer_path": "",
     "machine_preset": "Qidi Q2 0.4 nozzle",
     "process_preset": "0.20mm Standard @Qidi Q2",
     "filament_preset": "QIDI PLA Rapido @Qidi Q2 0.4 nozzle",
-    # Multi-colour projects: with a QIDI Box the colours are kept, without one
-    # everything is printed in the single loaded filament.
-    "qidi_box": False,
+    # Use the QIDI Box when the printer has one: read the slot colours, pick the
+    # matching filament settings and print multi-colour models in colour.
+    "use_box": True,
+    # The bed plate on the printer (decides the bed temperature) and the extra
+    # first-layer care that helps prints stick: slower first layer, fan off for
+    # the first 3 layers, slightly warmer first-layer bed for PLA/PETG.
+    "bed_type": "Textured PEI Plate",
+    "extra_grip": True,
+    # True once the first-run setup on the web page has been completed.
+    "setup_done": False,
     # Web page
     "web_port": 8765,
     "pin": "",

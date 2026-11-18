@@ -10,6 +10,7 @@ preset. That way any reasonably recent OrcaSlicer or QIDI Studio works.
 from __future__ import annotations
 
 import glob
+import re
 import json
 import os
 import sys
@@ -52,8 +53,10 @@ class Preset:
             return machine_name in printers
         cond = self.data.get("compatible_printers_condition") or ""
         if cond:
-            # Rough check of the most common form: printer_notes=~/.*Q2.*/ or printer_model == "Qidi Q2"
-            return "Q2" in cond or "q2" in cond
+            # Rough check of the common forms: printer_notes=~/.*Q2.*/ or printer_model == "Qidi Q2"
+            key = re.sub(r"[^a-z0-9]", "", model_of(machine_name).lower().replace("qidi", ""))
+            flat = re.sub(r"[^a-z0-9]", "", cond.lower())
+            return bool(key) and key in flat
         # No restriction written down.
         return True
 
@@ -225,11 +228,67 @@ class PresetLibrary:
         merged["instantiation"] = "true"
         return merged
 
-    def write_resolved(self, ptype: str, name: str, out_dir: str) -> str:
+    def write_resolved(self, ptype: str, name: str, out_dir: str, overrides: dict | None = None,
+                       tag: str = "") -> str:
         data = self.resolve(ptype, name)
+        if overrides:
+            data.update(overrides)
         os.makedirs(out_dir, exist_ok=True)
         safe = "".join(ch if ch.isalnum() or ch in " .-_@" else "_" for ch in name)
-        path = os.path.join(out_dir, f"{ptype}-{safe}.json")
+        path = os.path.join(out_dir, f"{ptype}{tag}-{safe}.json")
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=1)
         return path
+
+
+def model_of(machine_preset: str) -> str:
+    """'Qidi X-Plus 4 0.4 nozzle' -> 'X-Plus 4' (what people call the printer)."""
+    n = re.sub(r"\s*\d\.\d+\s*(mm\s*)?nozzle\s*$", "", machine_preset or "", flags=re.I).strip()
+    n = re.sub(r"^qidi\s+", "", n, flags=re.I)
+    return n or "printer"
+
+
+def _clean(s: str) -> str:
+    return re.sub(r"[^a-z0-9+]+", " ", (s or "").lower()).strip()
+
+
+def match_filament_preset(lib: "PresetLibrary", machine: str, name: str, vendor: str = "",
+                          ftype: str = "", fallback: str = "") -> str:
+    """Pick the filament preset that best fits a Box slot, e.g. 'PLA Rapido' by QIDI on a Q2."""
+    choices = lib.names("filament", machine)
+    if not choices:
+        return fallback
+    base = {c: _clean(c.split("@")[0]) for c in choices}
+    want_name = _clean(name)
+    want_vendor = _clean(vendor) if vendor and vendor.lower() != "generic" else ""
+    candidates = []
+    if want_name:
+        for full in ([f"{want_vendor} {want_name}".strip()] if want_vendor else []) + [f"qidi {want_name}", f"generic {want_name}", want_name]:
+            exact = [c for c in choices if base[c] == full]
+            if exact:
+                return exact[0]
+        candidates = [c for c in choices if want_name in base[c]]
+        if want_vendor:
+            candidates = [c for c in candidates if base[c].startswith(want_vendor)] or candidates
+        if candidates:
+            return min(candidates, key=lambda c: (not base[c].startswith(("qidi", "generic")), len(base[c])))
+    fam = _clean(ftype or name).split(" ")[0] if (ftype or name) else ""
+    if fam:
+        for pref in (f"generic {fam}", f"qidi {fam} basic", f"qidi {fam} rapido", f"qidi {fam}"):
+            exact = [c for c in choices if base[c] == pref]
+            if exact:
+                return exact[0]
+        fam_matches = [c for c in choices if fam in base[c].split(" ")]
+        if fam_matches:
+            return min(fam_matches, key=lambda c: (not base[c].startswith(("qidi", "generic")), len(base[c])))
+    return fallback or choices[0]
+
+
+def preset_filament_type(lib: "PresetLibrary", name: str) -> str:
+    try:
+        v = lib.resolve("filament", name).get("filament_type")
+    except KeyError:
+        return ""
+    if isinstance(v, list):
+        v = v[0] if v else ""
+    return str(v or "")

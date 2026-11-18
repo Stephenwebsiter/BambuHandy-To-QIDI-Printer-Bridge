@@ -5,12 +5,17 @@ from __future__ import annotations
 import hmac
 import json
 import os
+import re
+import shutil
 import socket
 import urllib.parse
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import __version__, config, profiles, slicer
-from .jobs import Job, JobManager
+from . import __version__, config, profile_fetch, profiles, slicer, threemf
+from . import box as qbox
+from .jobs import Job, JobManager, printer_name, safe_filename
 from .moonraker import Moonraker, MoonrakerError
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
@@ -19,6 +24,10 @@ ALLOWED_EXT = (".3mf", ".stl", ".obj", ".step", ".stp", ".amf", ".gcode", ".zip"
 
 
 LOG_PATH = os.path.join(config.DATA_DIR, "bridge.log")
+UPLOADS_DIR = os.path.join(config.DATA_DIR, "uploads")
+KEEP_UPLOADS = 12
+_FIL_CACHE: dict = {}
+_FILE_ID = re.compile(r"^[0-9a-f]{16}$")
 
 
 def write_log(line: str):
@@ -31,6 +40,30 @@ def write_log(line: str):
             fh.write(line.rstrip() + "\n")
     except OSError:
         pass
+
+
+def find_printers(timeout: float = 0.4) -> list[dict]:
+    """Look for Klipper/Moonraker printers (port 7125) on the PC's home networks."""
+    hosts = []
+    for ip in local_ips():
+        prefix = ip.rsplit(".", 1)[0]
+        hosts += [f"{prefix}.{n}" for n in range(1, 255) if f"{prefix}.{n}" != ip]
+
+    def probe(host):
+        try:
+            with socket.create_connection((host, 7125), timeout=timeout):
+                pass
+        except OSError:
+            return None
+        try:
+            info = Moonraker(host, 7125, timeout=3).info()
+        except MoonrakerError:
+            return None
+        return {"host": host, "name": info.get("hostname") or host, "state": info.get("state")}
+
+    with ThreadPoolExecutor(max_workers=64) as pool:
+        found = [r for r in pool.map(probe, hosts) if r]
+    return found
 
 
 def local_ips() -> list[str]:
@@ -125,6 +158,28 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(self._presets(cfg, q.get("machine", [""])[0], q.get("refresh", ["0"])[0] == "1"))
         if path == "/api/jobs":
             return self._json({"ok": True, "jobs": self.jobs.list()})
+        if path == "/api/box":
+            return self._json(self._box(cfg))
+        if path == "/api/filaments":
+            return self._json(self._filaments(cfg))
+        if path == "/api/discover":
+            return self._json({"ok": True, "printers": find_printers()})
+        m = re.fullmatch(r"/api/files/([0-9a-f]+)(/thumb)?", path)
+        if m and _FILE_ID.match(m.group(1)):
+            q = urllib.parse.parse_qs(url.query)
+            try:
+                plate = max(1, int(q.get("plate", ["1"])[0]))
+            except ValueError:
+                plate = 1
+            f = _uploaded(m.group(1))
+            if not f:
+                return self._error("That file is gone. Please pick it again.", 404)
+            if m.group(2):
+                png = threemf.thumbnail(f, plate)
+                if not png:
+                    return self._error("No preview", 404)
+                return self._send(200, png, "image/png")
+            return self._json(self._file_info(cfg, m.group(1), f, plate))
         if path == "/api/printer":
             try:
                 mr = Moonraker(cfg["printer_host"], cfg["printer_port"], cfg.get("printer_api_key", ""), timeout=5)
@@ -145,7 +200,7 @@ class Handler(BaseHTTPRequestHandler):
             if "printer_api_key" in data and data["printer_api_key"] == "********":
                 data.pop("printer_api_key")
             new = config.save(data)
-            if "slicer_path" in data:
+            if "slicer_path" in data or "machine_preset" in data:
                 slicer._LIB_CACHE.clear()
             return self._json({"ok": True, "state": self._state(new)})
         if path == "/api/test-printer":
@@ -157,7 +212,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "info": info})
             except (MoonrakerError, ValueError) as e:
                 return self._json({"ok": False, "error": str(e)})
+        if path == "/api/files":
+            return self._upload(cfg, store_only=True)
         if path == "/api/jobs":
+            if (self.headers.get("Content-Type") or "").startswith("application/json"):
+                return self._start_job(cfg, self._body_json())
             return self._upload(cfg)
         if path.startswith("/api/printer/"):
             action = path.rsplit("/", 1)[1]
@@ -186,15 +245,15 @@ class Handler(BaseHTTPRequestHandler):
                 break
             remaining -= len(chunk)
 
-    def _upload(self, cfg: dict):
+    def _upload(self, cfg: dict, store_only: bool = False):
         try:
-            return self._receive_upload()
+            return self._receive_upload(cfg, store_only)
         except Exception as e:  # never drop the connection without an answer
             self.log_error("upload failed: %r", e)
             self._drain()
             return self._error(f"The bridge could not take the file: {e}", 500)
 
-    def _receive_upload(self):
+    def _receive_upload(self, cfg: dict, store_only: bool = False):
         filename = urllib.parse.unquote(self.headers.get("X-Filename") or "")
         length = int(self.headers.get("Content-Length") or 0)
         self.log_message("upload %r, %d bytes, headers: %s", filename, length,
@@ -212,13 +271,21 @@ class Handler(BaseHTTPRequestHandler):
             plate = max(1, int(self.headers.get("X-Plate") or 1))
         except ValueError:
             plate = 1
-        start = (self.headers.get("X-Start") or "1") == "1"
-        job = Job(filename, source="phone", plate=plate, start=start,
-                  trust_gcode=(self.headers.get("X-Trust-Gcode") == "1"),
-                  process=urllib.parse.unquote(self.headers.get("X-Process") or ""),
-                  filament=urllib.parse.unquote(self.headers.get("X-Filament") or ""))
+        if store_only:
+            file_id = uuid.uuid4().hex[:16]
+            folder = os.path.join(UPLOADS_DIR, file_id)
+            os.makedirs(folder, exist_ok=True)
+            dest = os.path.join(folder, safe_filename(filename))
+            _tidy_uploads()
+        else:
+            start = (self.headers.get("X-Start") or "1") == "1"
+            job = Job(filename, source="phone", plate=plate, start=start,
+                      trust_gcode=(self.headers.get("X-Trust-Gcode") == "1"),
+                      process=urllib.parse.unquote(self.headers.get("X-Process") or ""),
+                      filament=urllib.parse.unquote(self.headers.get("X-Filament") or ""))
+            dest = job.path
         remaining = length
-        with open(job.path, "wb") as fh:
+        with open(dest, "wb") as fh:
             while remaining > 0:
                 chunk = self.rfile.read(min(1 << 20, remaining))
                 if not chunk:
@@ -229,8 +296,112 @@ class Handler(BaseHTTPRequestHandler):
             self.log_message("upload %r cut off: got %d of %d bytes", filename, length - remaining, length)
             return self._error("The upload was cut off. Please try again.")
         self.log_message("upload %r received in full", filename)
+        if store_only:
+            return self._json(self._file_info(cfg, file_id, dest, plate))
         self.jobs.submit(job)
         return self._json({"ok": True, "job": job.to_dict()})
+
+    def _start_job(self, cfg: dict, data: dict):
+        file_id = str(data.get("file_id") or "")
+        src = _uploaded(file_id) if _FILE_ID.match(file_id) else None
+        if not src:
+            return self._error("That file is gone. Please pick it again.", 404)
+        try:
+            plate = max(1, int(data.get("plate") or 1))
+        except (TypeError, ValueError):
+            plate = 1
+        slots = data.get("slots") if isinstance(data.get("slots"), list) else None
+        fils = data.get("filaments") if isinstance(data.get("filaments"), list) else None
+        job = Job(os.path.basename(src), source="phone", plate=plate, start=bool(data.get("start", True)),
+                  trust_gcode=bool(data.get("trust_gcode")), process=str(data.get("process") or ""),
+                  filament=str(data.get("filament") or ""), slots=slots, filaments=fils,
+                  use_box=data.get("use_box") if isinstance(data.get("use_box"), bool) else None)
+        shutil.copyfile(src, job.path)
+        self.jobs.submit(job)
+        return self._json({"ok": True, "job": job.to_dict()})
+
+    def _file_info(self, cfg: dict, file_id: str, path: str, plate: int) -> dict:
+        name = os.path.basename(path)
+        out = {"ok": True, "file_id": file_id, "name": name, "plates": [1], "plate": 1, "kind": "zip",
+               "made_for": None, "ready": False, "filaments": [], "thumb": False, "printer": printer_name(cfg)}
+        if name.lower().endswith(".zip"):
+            out["filaments"] = threemf.model_filaments("model.stl")
+            return out
+        try:
+            info = threemf.inspect(path)
+        except threemf.ModelFileError as e:
+            return {"ok": False, "error": str(e), "file_id": file_id}
+        plate = plate if plate in info["plates"] else info["plates"][0]
+        out.update({"kind": info["kind"], "made_for": info.get("printer_model"), "plates": info["plates"],
+                    "plate": plate})
+        target = cfg.get("machine_preset") or ""
+        out["ready"] = info["kind"] in ("gcode", "sliced_3mf") and threemf.same_printer(info.get("printer_model"), target)
+        try:
+            out["filaments"] = threemf.model_filaments(path, plate)
+        except Exception:  # an odd file should never stop the page
+            out["filaments"] = threemf.model_filaments("model.stl")
+        out["thumb"] = threemf.thumbnail(path, plate) is not None
+        return out
+
+    def _filaments(self, cfg: dict) -> dict:
+        """Every filament the printer has settings for, with the numbers people care about."""
+        machine = cfg.get("machine_preset") or slicer.DEFAULT_MACHINE
+        plate = cfg.get("bed_type") or slicer.DEFAULT_PLATE
+        try:
+            lib = slicer.library(slicer.resolve_slicer(cfg), machine=machine)
+        except slicer.SliceError as e:
+            return {"ok": False, "error": str(e), "filaments": []}
+        key = (id(lib), machine, plate)
+        if key not in _FIL_CACHE:
+            out = []
+            for name in lib.names("filament", machine):
+                try:
+                    d = lib.resolve("filament", name)
+                except KeyError:
+                    continue
+                first_bed, bed = slicer.bed_temp(d, plate)
+                ftype = d.get("filament_type")
+                ftype = (ftype[0] if isinstance(ftype, list) and ftype else ftype) or "PLA"
+                vendor = d.get("filament_vendor")
+                vendor = (vendor[0] if isinstance(vendor, list) and vendor else vendor) or name.split(" ")[0]
+                out.append({
+                    "name": name, "short": name.split("@")[0].strip(), "type": str(ftype),
+                    "family": qbox.normalize_type(str(ftype)), "vendor": str(vendor),
+                    "nozzle": int(slicer._num(d.get("nozzle_temperature"), 0)),
+                    "nozzle_low": int(slicer._num(d.get("nozzle_temperature_range_low"), 0)),
+                    "nozzle_high": int(slicer._num(d.get("nozzle_temperature_range_high"), 0)),
+                    "bed": bed, "bed_first": first_bed,
+                    "chamber": int(slicer._num(d.get("chamber_temperature"), 0)),
+                    "fan": int(slicer._num(d.get("fan_max_speed"), 0)),
+                    "flow": round(slicer._num(d.get("filament_max_volumetric_speed"), 0), 1),
+                    "dry": int(slicer._num(d.get("filament_dev_ams_drying_temperature"), 0)),
+                    "density": slicer._num(d.get("filament_density"), 0),
+                })
+            _FIL_CACHE.clear()
+            _FIL_CACHE[key] = out
+        return {"ok": True, "filaments": _FIL_CACHE[key], "plate": plate,
+                "plate_label": slicer.PLATE_LABELS.get(plate, plate), "default": cfg.get("filament_preset"),
+                "printer": printer_name(cfg)}
+
+    def _box(self, cfg: dict) -> dict:
+        try:
+            mr = Moonraker(cfg["printer_host"], cfg["printer_port"], cfg.get("printer_api_key", ""), timeout=5)
+            b = qbox.read_box(mr)
+        except MoonrakerError as e:
+            return {"ok": False, "error": str(e), "present": False, "slots": []}
+        b["ok"] = True
+        b["use_box"] = bool(cfg.get("use_box", True))
+        if b.get("present"):
+            try:
+                lib = slicer.library(slicer.resolve_slicer(cfg), machine=cfg.get("machine_preset"))
+            except slicer.SliceError:
+                lib = None
+            for s in b["slots"]:
+                if lib is not None and s.get("loaded"):
+                    s["preset"] = profiles.match_filament_preset(
+                        lib, cfg.get("machine_preset") or slicer.DEFAULT_MACHINE, s["name"], s.get("vendor", ""),
+                        s.get("type", ""), cfg.get("filament_preset", ""))
+        return b
 
     # -- data for the page -------------------------------------------------
     def _state(self, cfg: dict) -> dict:
@@ -256,24 +427,52 @@ class Handler(BaseHTTPRequestHandler):
         return {
             "ok": True, "version": __version__, "config": safe, "slicer": exe, "slicer_error": slicer_error,
             "studio": studio,
+            "printer_name": printer_name(cfg),
+            "plates": [{"value": k, "label": v} for k, v in slicer.PLATE_LABELS.items()],
             "pin_set": bool(cfg.get("pin")), "addresses": [f"http://{ip}:{self.server.server_address[1]}" for ip in local_ips()],
         }
 
     def _presets(self, cfg: dict, machine: str, refresh: bool) -> dict:
+        machine = machine or cfg.get("machine_preset") or slicer.DEFAULT_MACHINE
+        known = profile_fetch.available_machines()
         try:
             exe = slicer.resolve_slicer(cfg)
         except slicer.SliceError as e:
-            return {"ok": False, "error": str(e), "machine": [], "process": [], "filament": []}
-        lib = slicer.library(exe, refresh=refresh)
-        machine = machine or cfg.get("machine_preset") or ""
-        machines = [n for n in lib.names("machine") if "q2" in n.lower()] or lib.names("machine")
-        return {"ok": True, "machine": machines, "process": lib.names("process", machine),
-                "filament": lib.names("filament", machine)}
+            return {"ok": False, "error": str(e), "machine": known, "process": [], "filament": []}
+        try:
+            lib = slicer.library(exe, refresh=refresh, machine=machine)
+        except slicer.SliceError as e:
+            return {"ok": False, "error": str(e), "machine": known, "process": [], "filament": []}
+        machines = sorted(set(lib.names("machine")) | set(known), key=str.lower)
+        processes = lib.names("process", machine)
+        filaments = lib.names("filament", machine)
+        return {"ok": True, "machine": machines, "process": processes, "filament": filaments,
+                "selected": machine, "model": profiles.model_of(machine),
+                "default_process": slicer.default_process(processes),
+                "default_filament": profiles.match_filament_preset(lib, machine, "PLA", "QIDI", "PLA", "")}
+
+
+def _uploaded(file_id: str) -> str | None:
+    folder = os.path.join(UPLOADS_DIR, file_id)
+    try:
+        names = [n for n in os.listdir(folder) if not n.startswith(".")]
+    except OSError:
+        return None
+    return os.path.join(folder, names[0]) if names else None
+
+
+def _tidy_uploads():
+    try:
+        entries = sorted((os.path.getmtime(os.path.join(UPLOADS_DIR, d)), d) for d in os.listdir(UPLOADS_DIR))
+    except OSError:
+        return
+    for _t, d in entries[:-KEEP_UPLOADS]:
+        shutil.rmtree(os.path.join(UPLOADS_DIR, d), ignore_errors=True)
 
 
 def serve(port: int | None = None, host: str = "0.0.0.0") -> ThreadingHTTPServer:
     cfg = config.load()
-    port = port or int(cfg.get("web_port") or 8765)
+    port = int(cfg.get("web_port") or 8765) if port is None else port
     Handler.jobs = JobManager()
     httpd = ThreadingHTTPServer((host, port), Handler)
     httpd.daemon_threads = True

@@ -23,7 +23,7 @@ class Moonraker:
     def __init__(self, host: str, port: int = 7125, api_key: str = "", timeout: float = 15.0):
         host = (host or "").strip()
         if not host:
-            raise MoonrakerError("The printer address is not set yet. Open Settings and enter the Q2's IP address.")
+            raise MoonrakerError("The printer address is not set yet. Open Settings and enter the printer's IP address.")
         # Accept "192.168.1.20", "192.168.1.20:7125" or "http://192.168.1.20".
         if "://" in host:
             parsed = urllib.parse.urlparse(host)
@@ -60,7 +60,7 @@ class Moonraker:
             reason = getattr(e, "reason", e)
             raise MoonrakerError(
                 f"Could not reach the printer at {self.base} ({reason}). "
-                "Check that the Q2 is switched on, on the same Wi-Fi, and that the IP address in Settings is right."
+                "Check that the printer is switched on, on the same Wi-Fi, and that the IP address in Settings is right."
             ) from e
         if not raw:
             return {}
@@ -116,3 +116,32 @@ class Moonraker:
         if action not in ("pause", "resume", "cancel"):
             raise MoonrakerError(f"Unknown printer action: {action}")
         return self._request("POST", f"/printer/print/{action}")
+
+    def query(self, objects: dict) -> dict:
+        """Query Klipper objects, e.g. {"save_variables": "variables", "box_stepper slot0": None}."""
+        parts = []
+        for name, fields in objects.items():
+            key = urllib.parse.quote(name)
+            parts.append(f"{key}={urllib.parse.quote(fields)}" if fields else key)
+        return self._request("GET", "/printer/objects/query?" + "&".join(parts)).get("result", {}).get("status", {})
+
+    def object_list(self) -> list[str]:
+        return self._request("GET", "/printer/objects/list").get("result", {}).get("objects", [])
+
+    def get_text(self, path: str, timeout: float | None = None) -> str:
+        """Download a text file, e.g. /server/files/config/officiall_filas_list.cfg."""
+        req = urllib.request.Request(self.base + path)
+        if self.api_key:
+            req.add_header("X-Api-Key", self.api_key)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout or self.timeout) as resp:
+                return resp.read().decode("utf-8", "replace")
+        except urllib.error.HTTPError as e:
+            raise MoonrakerError(f"The printer answered with error {e.code}") from e
+        except (urllib.error.URLError, OSError) as e:
+            raise MoonrakerError(f"Could not reach the printer at {self.base} ({getattr(e, 'reason', e)}).") from e
+
+    def gcode(self, script: str) -> dict:
+        """Run G-code on the printer (used to tell the QIDI Box which slot each colour uses)."""
+        q = urllib.parse.urlencode({"script": script})
+        return self._request("POST", f"/printer/gcode/script?{q}", timeout=30)

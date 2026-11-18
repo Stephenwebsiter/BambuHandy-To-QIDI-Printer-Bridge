@@ -36,11 +36,25 @@ def _config_value(text: str, key: str) -> str | None:
     return None
 
 
-def is_qidi_q2(model: str | None) -> bool:
+def _model_key(name: str) -> str:
+    """'Qidi Q2 0.4 nozzle' / 'QIDI Q2' / 'Qidi X-Plus 4' -> 'q2' / 'q2' / 'xplus4'."""
+    n = (name or "").lower()
+    n = re.sub(r"\b\d\.\d+\s*(mm\s*)?nozzle\b", "", n)
+    n = n.replace("qidi", "")
+    return re.sub(r"[^a-z0-9]", "", n)
+
+
+def same_printer(model: str | None, machine_preset: str) -> bool:
+    """Was a file made for the printer the bridge is set up for (machine preset name)?"""
     if not model:
         return False
-    m = model.lower()
-    return "qidi" in m and "q2" in m
+    if "qidi" not in model.lower():
+        return False
+    return _model_key(model) == _model_key(machine_preset or "Qidi Q2")
+
+
+def is_qidi_q2(model: str | None) -> bool:
+    return same_printer(model, "Qidi Q2")
 
 
 def inspect(path: str) -> dict:
@@ -245,3 +259,140 @@ def export_plate_meshes(path: str, plate: int, out_dir: str) -> list[str]:
     if not files:
         raise ModelFileError(f"Could not find any printable objects on plate {plate}.")
     return files
+
+
+# ---------------------------------------------------------------------------
+# Colours / filaments a model uses, and its preview picture
+# ---------------------------------------------------------------------------
+
+def _listify(v):
+    if isinstance(v, list):
+        return v
+    if isinstance(v, str):
+        return [x for x in re.split(r"[;,]", v) if x != ""]
+    return []
+
+
+def model_filaments(path: str, plate: int = 1) -> list[dict]:
+    """The filaments (colours) a model is set up with: [{"index": 0, "color": "#RRGGBB", "type": "PLA", ...}].
+
+    Plain models (STL/OBJ/STEP) and single-colour projects give one entry.
+    """
+    import json
+    default = [{"index": 0, "color": "#FFFFFF", "type": "PLA", "name": "", "used": True}]
+    if not path.lower().endswith(".3mf"):
+        if path.lower().endswith(".gcode"):
+            return _gcode_filaments(path) or default
+        return default
+    try:
+        with zipfile.ZipFile(path) as z:
+            names = set(z.namelist())
+            cfg = {}
+            if "Metadata/project_settings.config" in names:
+                try:
+                    cfg = json.loads(z.read("Metadata/project_settings.config").decode("utf-8", "replace"))
+                except ValueError:
+                    cfg = {}
+            used = _used_filaments(z, names, plate)
+    except zipfile.BadZipFile:
+        return default
+    colours = _listify(cfg.get("filament_colour"))
+    types = _listify(cfg.get("filament_type"))
+    ids = _listify(cfg.get("filament_settings_id"))
+    count = max(len(colours), len(types), len(ids), 1)
+    out = []
+    for i in range(count):
+        col = colours[i] if i < len(colours) else "#FFFFFF"
+        out.append({
+            "index": i,
+            "color": _norm_hex(col),
+            "type": (types[i] if i < len(types) else (types[0] if types else "PLA")) or "PLA",
+            "name": (ids[i] if i < len(ids) else "").strip('"'),
+            "used": (used is None) or (i + 1 in used),
+        })
+    if not any(f["used"] for f in out):
+        for f in out:
+            f["used"] = True
+    return out
+
+
+def _norm_hex(v: str) -> str:
+    v = str(v).strip().strip('"').lstrip("#")
+    if re.fullmatch(r"[0-9a-fA-F]{8}", v):
+        v = v[:6]
+    return "#" + v.upper() if re.fullmatch(r"[0-9a-fA-F]{6}", v) else "#FFFFFF"
+
+
+def _used_filaments(z: zipfile.ZipFile, names: set, plate: int):
+    """1-based filament numbers used on a plate, or None when it can't be told."""
+    if "Metadata/slice_info.config" in names:
+        try:
+            root = ET.fromstring(z.read("Metadata/slice_info.config"))
+            for p in root.iter("plate"):
+                idx = None
+                for md in p.findall("metadata"):
+                    if md.get("key") == "index":
+                        idx = int(md.get("value", "0") or 0)
+                if idx == plate:
+                    ids = {int(f.get("id")) for f in p.iter("filament") if (f.get("id") or "").isdigit()}
+                    if ids:
+                        return ids
+        except (ET.ParseError, ValueError):
+            pass
+    # Painted models can use any colour, so don't guess.
+    for n in names:
+        if n.startswith("3D/") and n.endswith(".model"):
+            with z.open(n) as fh:
+                head = fh.read(4_000_000)
+            if b"mmu_segmentation" in head or b"paint_color" in head:
+                return None
+    try:
+        root = ET.fromstring(z.read("Metadata/model_settings.config"))
+    except (KeyError, ET.ParseError):
+        return None
+    wanted = set(plate_objects(z).get(plate) or [])
+    used = set()
+    for obj in root.iter("object"):
+        if wanted and obj.get("id") not in wanted:
+            continue
+        for md in obj.iter("metadata"):
+            if md.get("key") == "extruder":
+                try:
+                    used.add(int(md.get("value")))
+                except (TypeError, ValueError):
+                    pass
+    return used or None
+
+
+def _gcode_filaments(path: str) -> list[dict]:
+    size = os.path.getsize(path)
+    with open(path, "rb") as fh:
+        fh.seek(max(0, size - 400_000))
+        tail = fh.read().decode("utf-8", "replace")
+    cols = _config_value(tail, "filament_colour")
+    types = _config_value(tail, "filament_type")
+    if not cols:
+        return []
+    cols = _listify(cols)
+    types = _listify(types or "")
+    return [{"index": i, "color": _norm_hex(c), "type": types[i] if i < len(types) else "PLA", "name": "", "used": True}
+            for i, c in enumerate(cols)]
+
+
+def thumbnail(path: str, plate: int = 1) -> bytes | None:
+    """Preview picture stored inside a 3MF (sliced or project), if any."""
+    if not path.lower().endswith(".3mf"):
+        return None
+    try:
+        with zipfile.ZipFile(path) as z:
+            names = z.namelist()
+            for n in (f"Metadata/plate_{plate}.png", "Metadata/plate_1.png", "Metadata/thumbnail.png",
+                      "Auxiliaries/.thumbnails/thumbnail_middle.png", "Auxiliaries/.thumbnails/thumbnail_3mf.png"):
+                if n in names:
+                    return z.read(n)
+            pngs = [n for n in names if n.lower().endswith(".png") and "thumb" in n.lower()]
+            if pngs:
+                return z.read(pngs[0])
+    except zipfile.BadZipFile:
+        pass
+    return None

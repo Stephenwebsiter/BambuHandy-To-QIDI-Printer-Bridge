@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Q2 Print Bridge</title>
+<title>QIDI Print Bridge</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg">
 <meta name="theme-color" content="#1f6feb">
@@ -12,11 +12,11 @@
 :root {
   --bg: #f4f6f8; --card: #ffffff; --text: #1b1f24; --muted: #5d6773; --line: #dde2e7;
   --accent: #1f6feb; --accent-text: #ffffff; --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e;
-  --chip: #eef2f6;
+  --chip: #eef2f6; --sel: #e6f0ff;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #0f1419; --card: #182028; --text: #e6edf3; --muted: #9aa6b2; --line: #2b3640;
-          --accent: #4493f8; --accent-text: #0b1117; --ok: #3fb950; --warn: #d29922; --bad: #f85149; --chip: #222c36; }
+          --accent: #4493f8; --accent-text: #0b1117; --ok: #3fb950; --warn: #d29922; --bad: #f85149; --chip: #222c36; --sel: #1c2d44; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text);
@@ -24,12 +24,15 @@ body { margin: 0; background: var(--bg); color: var(--text);
 header { padding: 18px 16px 8px; max-width: 640px; margin: 0 auto; display: flex; align-items: center; gap: 10px; }
 header h1 { font-size: 20px; margin: 0; flex: 1; }
 #printerPill { font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--chip); color: var(--muted); white-space: nowrap; }
+#printerPill.ok { color: var(--ok); } #printerPill.busy { color: var(--warn); } #printerPill.bad { color: var(--bad); }
 nav { max-width: 640px; margin: 0 auto; padding: 0 16px; display: flex; gap: 6px; }
 nav button { flex: 1; border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 10px; border-radius: 10px; font: inherit; }
 nav button.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 main { max-width: 640px; margin: 0 auto; padding: 12px 16px 40px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
 .card h2 { font-size: 16px; margin: 0 0 10px; }
+.step { display: inline-flex; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--accent-text);
+        font-size: 13px; align-items: center; justify-content: center; margin-right: 6px; vertical-align: 1px; }
 label { display: block; font-size: 14px; color: var(--muted); margin: 12px 0 4px; }
 input[type=text], input[type=number], input[type=password], select {
   width: 100%; padding: 11px 12px; font: inherit; color: var(--text); background: var(--bg);
@@ -39,6 +42,7 @@ input[type=text], input[type=number], input[type=password], select {
 .btn { display: block; width: 100%; padding: 14px; margin-top: 16px; font: 600 16px/1 inherit; font-family: inherit;
        border-radius: 12px; border: 0; background: var(--accent); color: var(--accent-text); }
 .btn.secondary { background: var(--chip); color: var(--text); font-weight: 500; }
+.btn.small { padding: 10px; margin-top: 10px; font-size: 15px; }
 .btn:disabled { opacity: .5; }
 .btn.danger { background: var(--bad); color: #fff; }
 .drop { display: block; border: 2px dashed var(--line); border-radius: 12px; padding: 22px 12px; text-align: center; color: var(--muted); cursor: pointer; }
@@ -57,23 +61,65 @@ details summary { font-size: 13px; color: var(--muted); margin-top: 6px; cursor:
 pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--bg); padding: 8px; border-radius: 8px; max-height: 260px; overflow: auto; }
 .bar { height: 10px; border-radius: 999px; background: var(--chip); overflow: hidden; margin: 10px 0 4px; }
 .bar > span { display: block; height: 100%; background: var(--accent); width: 0; }
-.stat { display: flex; justify-content: space-between; padding: 6px 0; border-top: 1px solid var(--line); font-size: 15px; }
+.stat { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 15px; }
 .stat:first-child { border-top: 0; }
 .notice { padding: 10px 12px; border-radius: 10px; background: var(--chip); font-size: 14px; margin-top: 10px; }
 .notice.bad { color: var(--bad); }
 .notice.ok { color: var(--ok); }
 .hidden { display: none !important; }
 ol { padding-left: 20px; margin: 6px 0 0; } ol li { margin: 4px 0; font-size: 14px; }
+.sw { display: inline-block; width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(127,127,127,.5); flex: none; vertical-align: middle; }
+.sw.big { width: 34px; height: 34px; }
+.sw.empty { background: repeating-linear-gradient(45deg, transparent 0 4px, var(--line) 4px 6px); }
+.preview { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
+.preview img { width: 84px; height: 84px; object-fit: contain; border-radius: 10px; background: var(--bg); flex: none; }
+.preview .meta { min-width: 0; }
+.preview .fname { font-weight: 600; word-break: break-all; }
+.slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.slot { border: 1px solid var(--line); border-radius: 12px; padding: 10px 6px; text-align: center; background: var(--bg); font-size: 13px; min-width: 0; }
+.slot .sw { display: block; margin: 0 auto 6px; }
+.slot .n { font-weight: 600; font-size: 12px; color: var(--muted); }
+.slot .t { overflow-wrap: anywhere; line-height: 1.25; }
+.slot.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.slot .head { font-size: 11px; color: var(--accent); font-weight: 600; }
+.cmap { border-top: 1px solid var(--line); padding: 12px 0 4px; }
+.cmap:first-child { border-top: 0; padding-top: 0; }
+.cmap .top { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+.pick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.pick button { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text);
+               padding: 6px 10px 6px 6px; border-radius: 999px; font: inherit; font-size: 14px; }
+.pick button.on { border-color: var(--accent); background: var(--sel); box-shadow: 0 0 0 1px var(--accent) inset; }
+.pick button .sw { width: 24px; height: 24px; }
+.found button { display: block; width: 100%; text-align: left; margin-top: 8px; padding: 12px; border-radius: 10px; border: 1px solid var(--line);
+                background: var(--bg); color: var(--text); font: inherit; }
+.jobcols { display: flex; gap: 4px; margin-top: 4px; }
+.jobcols .sw { width: 16px; height: 16px; }
+nav button { padding: 10px 4px; }
+.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-top: 10px; }
+.chips button { flex: none; border: 1px solid var(--line); background: var(--bg); color: var(--text); padding: 6px 12px; border-radius: 999px; font: inherit; font-size: 14px; }
+.chips button.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.fil { border-top: 1px solid var(--line); padding: 10px 0; }
+.fil:first-child { border-top: 0; }
+.fil summary { list-style: none; display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 15px; margin: 0; }
+.fil summary::-webkit-details-marker { display: none; }
+.fil .nm { flex: 1; min-width: 0; }
+.fil .nm b { display: block; font-weight: 600; }
+.fil .nm span { font-size: 13px; color: var(--muted); }
+.tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--chip); color: var(--muted); flex: none; }
+.tag.def { background: var(--sel); color: var(--accent); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 14px; margin-top: 8px; }
+.grid2 span { color: var(--muted); }
 </style>
 </head>
 <body>
 <header>
-  <h1>Q2 Print Bridge</h1>
+  <h1>QIDI Print Bridge</h1>
   <span id="printerPill">Checking printer…</span>
 </header>
-<nav>
+<nav id="nav">
   <button data-tab="print" class="on">Print</button>
   <button data-tab="printer">Printer</button>
+  <button data-tab="filaments">Filaments</button>
   <button data-tab="settings">Settings</button>
 </nav>
 <main>
@@ -84,37 +130,84 @@ ol { padding-left: 20px; margin: 6px 0 0; } ol li { margin: 4px 0; font-size: 14
     <button class="btn" id="pinBtn">Unlock</button>
   </section>
 
+  <!-- FIRST-RUN SETUP -->
+  <section id="setup" class="hidden">
+    <div class="card">
+      <h2>Welcome! Let's connect your printer</h2>
+      <p class="hint">Two quick steps. You can change everything later in Settings.</p>
+    </div>
+    <div class="card">
+      <h2><span class="step">1</span>Find your printer</h2>
+      <p class="hint">Make sure the printer is switched on and on the same Wi-Fi as this PC.</p>
+      <button class="btn" id="w_find">Search my Wi-Fi</button>
+      <div id="w_found" class="found"></div>
+      <label for="w_host">Or type its IP address</label>
+      <input id="w_host" type="text" placeholder="e.g. 192.168.1.50" inputmode="decimal" autocomplete="off">
+      <p class="hint">On the printer's screen: Settings → Network shows the IP address.</p>
+      <button class="btn secondary small" id="w_test">Check this address</button>
+      <div id="w_note" class="notice hidden"></div>
+    </div>
+    <div class="card">
+      <h2><span class="step">2</span>Which QIDI printer is it?</h2>
+      <label for="w_model">Printer</label>
+      <select id="w_model"></select>
+      <label for="w_nozzle">Nozzle</label>
+      <select id="w_nozzle"></select>
+      <p class="hint">Most printers came with a 0.4 mm nozzle.</p>
+      <button class="btn" id="w_done" disabled>Done, let's print</button>
+      <div id="w_doneNote" class="notice hidden"></div>
+    </div>
+  </section>
+
   <!-- PRINT -->
   <section id="tab-print">
+    <div class="card hidden" id="nowPrinting">
+      <h2>Printing now</h2>
+      <p class="hint" id="nowText"></p>
+      <button class="btn secondary small" id="goPrinter">Pause or cancel</button>
+    </div>
     <div class="card">
-      <h2>Send a model to your Q2</h2>
+      <h2><span class="step">1</span>Choose a model</h2>
       <label class="drop" id="drop">
         <strong id="fileLabel">Tap to choose a file</strong>
         <span id="fileSub">.3mf, .stl, .obj, .step, .gcode or .zip</span>
         <input id="file" type="file" accept=".3mf,.stl,.obj,.step,.stp,.amf,.gcode,.zip,model/3mf,model/stl,application/zip,application/octet-stream">
       </label>
-      <div class="row">
-        <div>
-          <label for="quality">Quality</label>
-          <select id="quality"></select>
-        </div>
-        <div style="max-width:110px">
-          <label for="plate">Plate</label>
-          <input id="plate" type="number" min="1" value="1" inputmode="numeric">
+      <div id="fileNote" class="notice hidden"></div>
+      <div id="preview" class="preview hidden">
+        <img id="thumb" alt="" class="hidden">
+        <div class="meta">
+          <div class="fname" id="pvName"></div>
+          <div class="hint" id="pvMade"></div>
         </div>
       </div>
-      <label for="filament">Filament</label>
-      <select id="filament"></select>
+      <div id="plateRow" class="hidden">
+        <label for="plate">Plate</label>
+        <select id="plate"></select>
+      </div>
+    </div>
+
+    <div class="card hidden" id="colourCard">
+      <h2><span class="step">2</span>Colours</h2>
+      <div id="colourBody"></div>
+    </div>
+
+    <div class="card hidden" id="optCard">
+      <h2><span class="step" id="optStep">3</span>Print</h2>
+      <div id="qualityRow">
+        <label for="quality">Quality</label>
+        <select id="quality"></select>
+      </div>
+      <div id="filamentRow" class="hidden">
+        <label for="filament">Filament</label>
+        <select id="filament"></select>
+      </div>
       <div class="check"><input type="checkbox" id="startNow" checked><span>Start printing straight away</span></div>
-      <div class="check hidden" id="trustRow"><input type="checkbox" id="trustGcode"><span>This G-code was made for my Q2</span></div>
-      <button class="btn" id="sendBtn" disabled>Print on Q2</button>
+      <div class="check hidden" id="trustRow"><input type="checkbox" id="trustGcode"><span id="trustText">This G-code was made for my printer</span></div>
+      <button class="btn" id="sendBtn" disabled>Print</button>
       <div id="sendNote" class="notice hidden"></div>
     </div>
-    <div class="card hidden" id="nowPrinting">
-      <h2>Printing now</h2>
-      <p class="hint" id="nowText"></p>
-      <button class="btn secondary" id="goPrinter">Pause or cancel</button>
-    </div>
+
     <div class="card">
       <h2>Recent jobs</h2>
       <div id="jobs"><p class="hint">Nothing sent yet.</p></div>
@@ -122,18 +215,18 @@ ol { padding-left: 20px; margin: 6px 0 0; } ol li { margin: 4px 0; font-size: 14
     <div class="card">
       <h2>Getting a model from Bambu Handy / MakerWorld</h2>
       <ol>
-        <li>Find the model on MakerWorld (in your phone's browser or from Handy's share button, which opens it in the browser).</li>
-        <li>Tap <b>Download</b> and save the <b>.3mf</b> (or .stl) to your phone.</li>
-        <li>Come back here, tap <b>Choose a file</b>, pick it, then <b>Print on Q2</b>.</li>
+        <li>Find the model on MakerWorld (in your phone's browser, or from Handy's share button, which opens it in the browser).</li>
+        <li>Tap <b>Download</b> and save the <b>.3mf</b> (or .stl) to your phone. If you use Google Drive, save it to the phone itself.</li>
+        <li>Come back here, tap <b>Choose a file</b>, check the colours, then tap <b>Print</b>.</li>
       </ol>
-      <p class="hint">The bridge re-slices Bambu files with QIDI Q2 settings, so they print correctly on the Q2.</p>
+      <p class="hint">Bambu files are re-prepared with the right settings for your QIDI printer automatically.</p>
     </div>
   </section>
 
   <!-- PRINTER -->
   <section id="tab-printer" class="hidden">
     <div class="card">
-      <h2>Printer status</h2>
+      <h2 id="pTitle">Printer status</h2>
       <div id="pstatus"><p class="hint">Loading…</p></div>
       <div id="controls" class="hidden">
         <div class="row">
@@ -143,45 +236,75 @@ ol { padding-left: 20px; margin: 6px 0 0; } ol li { margin: 4px 0; font-size: 14
         <div id="ctrlNote" class="notice hidden"></div>
       </div>
     </div>
+    <div class="card hidden" id="boxCard">
+      <h2>QIDI Box</h2>
+      <div id="boxBody"></div>
+      <p class="hint">To change what's in a slot, load the filament and set its colour and type on the printer's screen. This page reads it from there.</p>
+    </div>
+  </section>
+
+  <!-- FILAMENTS -->
+  <section id="tab-filaments" class="hidden">
+    <div class="card hidden" id="libBox">
+      <h2>In your QIDI Box</h2>
+      <div id="libBoxBody"></div>
+    </div>
+    <div class="card">
+      <h2>Filament library</h2>
+      <p class="hint" id="libIntro">Every filament your printer has tested settings for. Tap one to see its temperatures.</p>
+      <input id="libSearch" type="text" placeholder="Search, e.g. PETG, silk, Polymaker" autocomplete="off" style="margin-top:10px">
+      <div class="chips" id="libChips"></div>
+      <div id="libList" style="margin-top:8px"><p class="hint">Loading…</p></div>
+    </div>
   </section>
 
   <!-- SETTINGS -->
   <section id="tab-settings" class="hidden">
     <div class="card">
-      <h2>Your QIDI Q2</h2>
-      <label for="s_host">Printer IP address</label>
+      <h2>Your printer</h2>
+      <label for="s_model">Printer</label>
+      <select id="s_model"></select>
+      <label for="s_nozzle">Nozzle</label>
+      <select id="s_nozzle"></select>
+      <label for="s_host">IP address</label>
       <input id="s_host" type="text" placeholder="e.g. 192.168.1.50" inputmode="decimal" autocomplete="off">
-      <p class="hint">On the Q2's screen: Settings → Network shows the IP address.</p>
+      <p class="hint">On the printer's screen: Settings → Network shows the IP address.</p>
       <div class="row">
-        <div><label for="s_port">Port</label><input id="s_port" type="number" value="7125"></div>
-        <div><label for="s_key">API key (usually blank)</label><input id="s_key" type="password" autocomplete="off"></div>
+        <div><button class="btn secondary small" id="findBtn">Search my Wi-Fi</button></div>
+        <div><button class="btn secondary small" id="testBtn">Test connection</button></div>
       </div>
-      <button class="btn secondary" id="testBtn">Test connection</button>
+      <div id="s_found" class="found"></div>
       <div id="testNote" class="notice hidden"></div>
     </div>
     <div class="card">
-      <h2>Slicing</h2>
+      <h2>Filament and colours</h2>
+      <div class="check"><input type="checkbox" id="s_box"><span>Use my QIDI Box (read the colours in it and print multi-colour models in colour)</span></div>
+      <label for="s_filament">Filament when there's no Box</label>
+      <select id="s_filament"></select>
+      <label for="s_process">Normal quality</label>
+      <select id="s_process"></select>
+      <label for="s_plate">Bed plate on the printer</label>
+      <select id="s_plate"></select>
+      <p class="hint">The bed temperature depends on the plate. Pick the one that is on the printer now.</p>
+      <div class="check"><input type="checkbox" id="s_grip"><span>Extra bed grip: slower first layer, fan off for the first 3 layers, slightly warmer first layer (recommended)</span></div>
+      <div class="check"><input type="checkbox" id="s_start"><span>Tick "Start printing straight away" by default</span></div>
+    </div>
+    <details class="card">
+      <summary style="font-size:16px;font-weight:600;color:var(--text);margin:0">Advanced</summary>
       <label for="s_slicer">Slicer program</label>
       <input id="s_slicer" type="text" placeholder="Found automatically if installed">
       <p class="hint" id="slicerHint"></p>
-      <label for="s_machine">Printer profile</label>
-      <select id="s_machine"></select>
-      <label for="s_process">Default quality</label>
-      <select id="s_process"></select>
-      <label for="s_filament">Default filament</label>
-      <select id="s_filament"></select>
-      <div class="check"><input type="checkbox" id="s_box"><span>I have a QIDI Box (keep colours in multi-colour models)</span></div>
-      <div class="check"><input type="checkbox" id="s_start"><span>Tick "Start printing straight away" by default</span></div>
-    </div>
-    <div class="card">
-      <h2>Security</h2>
+      <div class="row">
+        <div><label for="s_port">Printer port</label><input id="s_port" type="number" value="7125"></div>
+        <div><label for="s_key">API key (usually blank)</label><input id="s_key" type="password" autocomplete="off"></div>
+      </div>
       <label for="s_pin">PIN for this page (optional)</label>
       <input id="s_pin" type="password" inputmode="numeric" placeholder="Leave blank to keep the current setting" autocomplete="new-password">
       <p class="hint" id="pinHint"></p>
-    </div>
+    </details>
     <div class="card">
       <h2>Bambu Studio printer</h2>
-      <p class="hint">Makes this PC show up in Bambu Studio as a Bambu printer. Anything you print to it is re-sliced for the Q2 and sent on. First run <b>Set up Bambu Studio.bat</b> once.</p>
+      <p class="hint">Makes this PC show up in Bambu Studio as a Bambu printer. Anything you print to it is re-prepared for your QIDI printer and sent on. First run <b>Set up Bambu Studio.bat</b> once.</p>
       <div class="check"><input type="checkbox" id="s_studio"><span>Show up as a printer in Bambu Studio</span></div>
       <div id="studioInfo" class="notice hidden"></div>
     </div>
@@ -197,7 +320,9 @@ ol { padding-left: 20px; margin: 6px 0 0; } ol li { margin: 4px 0; font-size: 14
 const $ = (id) => document.getElementById(id);
 let PIN = '';
 try { PIN = localStorage.getItem('bridgePin') || ''; } catch (e) {}
-let STATE = null;
+let LIB = null, LIBFAM = 'All';
+let STATE = null, PRESETS = null, BOX = null, FILE = null, CHOICE = [], MACHINES = [];
+const EXT_RE = /\.(3mf|stl|obj|step|stp|amf|gcode|zip)$/i;
 
 async function api(path, opts = {}) {
   opts.headers = Object.assign({}, opts.headers || {}, PIN ? { 'X-Bridge-Pin': PIN } : {});
@@ -206,6 +331,20 @@ async function api(path, opts = {}) {
   if (r.status === 401) { showPin(); throw new Error(data.error || 'PIN needed'); }
   return data;
 }
+function postJSON(path, body) {
+  return api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function note(el, text, kind) {
+  el.textContent = text; el.className = 'notice' + (kind ? ' ' + kind : '');
+  el.classList.toggle('hidden', !text);
+}
+function sw(color, cls) {
+  return color ? `<span class="sw ${cls || ''}" style="background:${esc(color)}"></span>` : `<span class="sw empty ${cls || ''}"></span>`;
+}
+// "QIDI PLA Rapido @Qidi Q2 0.4 nozzle" -> "QIDI PLA Rapido"; "0.20mm Standard @Qidi Q2" -> "0.20mm Standard"
+function short(name) { return String(name || '').replace(/\s*@.*$/, '') || name; }
+function printerName() { return (STATE && STATE.printer_name) || 'printer'; }
 
 function showPin() { $('pinBox').classList.remove('hidden'); }
 $('pinBtn').onclick = () => {
@@ -215,117 +354,306 @@ $('pinBtn').onclick = () => {
   boot();
 };
 
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
-  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
-  ['print', 'printer', 'settings'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
-  if (b.dataset.tab === 'printer') refreshPrinter();
-});
+function showTab(name) {
+  document.querySelectorAll('#nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === name));
+  ['print', 'printer', 'filaments', 'settings'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== name));
+  if (name === 'printer') { refreshPrinter(); refreshBox(); }
+  if (name === 'filaments') loadLibrary();
+}
+document.querySelectorAll('#nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
-function fillSelect(sel, items, value) {
+function fillSelect(sel, items, value, label) {
   sel.innerHTML = '';
   const list = items.slice();
   if (value && !list.includes(value)) list.unshift(value);
   for (const it of list) {
     const o = document.createElement('option');
-    o.value = it; o.textContent = it; if (it === value) o.selected = true;
+    o.value = it; o.textContent = label ? label(it) : it; if (it === value) o.selected = true;
     sel.appendChild(o);
   }
 }
-
-function note(el, text, kind) {
-  el.textContent = text; el.className = 'notice' + (kind ? ' ' + kind : '');
-  el.classList.toggle('hidden', !text);
+// Filament list grouped by brand, so the long list is easy to scan.
+function fillFilaments(sel, items, value) {
+  sel.innerHTML = '';
+  const list = items.slice();
+  if (value && !list.includes(value)) list.unshift(value);
+  const groups = {};
+  for (const it of list) { const brand = short(it).split(' ')[0] || 'Other'; (groups[brand] = groups[brand] || []).push(it); }
+  const order = Object.keys(groups).sort((a, b) => (b === 'QIDI') - (a === 'QIDI') || (b === 'Generic') - (a === 'Generic') || a.localeCompare(b));
+  for (const g of order) {
+    const og = document.createElement('optgroup'); og.label = g;
+    for (const it of groups[g]) {
+      const o = document.createElement('option'); o.value = it; o.textContent = short(it); if (it === value) o.selected = true;
+      og.appendChild(o);
+    }
+    sel.appendChild(og);
+  }
 }
 
-async function loadPresets(machine, refresh) {
-  const q = new URLSearchParams({ machine: machine || '', refresh: refresh ? '1' : '0' });
-  const p = await api('/api/presets?' + q);
-  const c = STATE.config;
-  if (!p.ok) { $('slicerHint').textContent = p.error; return; }
-  fillSelect($('s_machine'), p.machine, machine || c.machine_preset);
-  fillSelect($('s_process'), p.process, c.process_preset);
-  fillSelect($('s_filament'), p.filament, c.filament_preset);
-  fillSelect($('quality'), p.process, c.process_preset);
-  fillSelect($('filament'), p.filament, c.filament_preset);
+// --- printer models ("Qidi Q2 0.4 nozzle" -> model "Q2", nozzle "0.4") --------------------------------
+function splitMachine(m) {
+  const r = /^(?:Qidi\s+)?(.*?)\s+(\d\.\d+)\s*nozzle$/i.exec(m || '');
+  return r ? { model: r[1], nozzle: r[2] } : { model: m, nozzle: '' };
+}
+function fillModels(modelSel, nozzleSel, current) {
+  const models = {};
+  for (const m of MACHINES) { const s = splitMachine(m); (models[s.model] = models[s.model] || []).push(s.nozzle); }
+  const cur = splitMachine(current);
+  fillSelect(modelSel, Object.keys(models).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })), cur.model);
+  const update = (want) => {
+    const nz = (models[modelSel.value] || ['0.4']).slice().sort();
+    fillSelect(nozzleSel, nz, nz.includes(want) ? want : (nz.includes('0.4') ? '0.4' : nz[0]), n => n ? n + ' mm' : 'standard');
+  };
+  modelSel.onchange = () => { update('0.4'); if (modelSel.onpick) modelSel.onpick(); };
+  update(cur.nozzle || '0.4');
+}
+function machineFrom(modelSel, nozzleSel) {
+  return MACHINES.find(m => { const s = splitMachine(m); return s.model === modelSel.value && s.nozzle === nozzleSel.value; })
+    || MACHINES.find(m => splitMachine(m).model === modelSel.value) || MACHINES[0];
+}
+
+async function loadPresets(machine) {
+  const p = await api('/api/presets?' + new URLSearchParams({ machine: machine || '' }));
+  PRESETS = p;
+  MACHINES = (p.machine || []).length ? p.machine : [STATE.config.machine_preset];
+  if (!p.ok) { $('slicerHint').textContent = p.error; return p; }
+  const c = STATE.config, same = !machine || machine === c.machine_preset;
+  const proc = same && p.process.includes(c.process_preset) ? c.process_preset : p.default_process;
+  const fil = same && p.filament.includes(c.filament_preset) ? c.filament_preset : p.default_filament;
+  fillSelect($('s_process'), p.process, proc, short);
+  fillFilaments($('s_filament'), p.filament, fil);
+  if (same) {
+    fillSelect($('quality'), p.process, proc, short);
+    fillFilaments($('filament'), p.filament, fil);
+  }
+  return p;
 }
 
 async function boot() {
   try { STATE = await api('/api/state'); } catch (e) { return; }
   const c = STATE.config;
   $('s_host').value = c.printer_host; $('s_port').value = c.printer_port; $('s_key').value = c.printer_api_key;
-  $('s_slicer').value = c.slicer_path; $('s_box').checked = c.qidi_box; $('s_start').checked = c.start_print;
+  $('s_slicer').value = c.slicer_path; $('s_box').checked = c.use_box; $('s_start').checked = c.start_print;
   $('startNow').checked = c.start_print;
   $('s_studio').checked = c.virtual_printer_enabled;
+  $('s_grip').checked = c.extra_grip;
+  fillSelect($('s_plate'), (STATE.plates || []).map(p => p.value), c.bed_type,
+             v => ((STATE.plates || []).find(p => p.value === v) || {}).label || v);
+  LIB = null;
+  $('trustText').textContent = `This G-code was made for my ${printerName()}`;
   const st = STATE.studio || {};
   if (st.running) note($('studioInfo'), `On. In Bambu Studio look for "${st.name}" (IP ${st.ip}). Access code: ${st.access_code}`, 'ok');
   else if (st.enabled) note($('studioInfo'), 'Switched on, but not running yet. Close the bridge window and start it again.', '');
   else note($('studioInfo'), '');
   $('slicerHint').textContent = STATE.slicer ? 'Using: ' + STATE.slicer : STATE.slicer_error;
   $('pinHint').textContent = STATE.pin_set ? 'A PIN is set. Enter a new one to change it, or a single space to remove it.' : 'No PIN set. Anyone on your Wi-Fi can use this page.';
-  $('addresses').innerHTML = (STATE.addresses || []).map(a => `<div><b>${a}</b></div>`).join('') || 'Unknown';
-  if (!c.printer_host) document.querySelector('nav button[data-tab=settings]').click();
+  $('addresses').innerHTML = (STATE.addresses || []).map(a => `<div><b>${esc(a)}</b></div>`).join('') || 'Unknown';
   await loadPresets(c.machine_preset);
-  refreshJobs(); refreshPrinter();
+  fillModels($('s_model'), $('s_nozzle'), c.machine_preset);
+  if (!c.printer_host) startSetup();
+  refreshJobs(); refreshPrinter(); refreshBox();
 }
 
-$('s_machine').onchange = () => loadPresets($('s_machine').value);
-
-$('file').onchange = () => {
-  const f = $('file').files[0];
-  $('fileLabel').textContent = f ? f.name : 'Tap to choose a file';
-  $('fileSub').textContent = f ? (f.size / 1048576).toFixed(1) + ' MB' : '.3mf, .stl, .obj, .step, .gcode or .zip';
-  $('trustRow').classList.toggle('hidden', !(f && f.name.toLowerCase().endsWith('.gcode')));
-  $('sendBtn').disabled = !f;
+// --- first-run setup ----------------------------------------------------------------------------------
+function startSetup() {
+  $('setup').classList.remove('hidden');
+  $('nav').classList.add('hidden');
+  ['print', 'printer', 'filaments', 'settings'].forEach(t => $('tab-' + t).classList.add('hidden'));
+  fillModels($('w_model'), $('w_nozzle'), STATE.config.machine_preset);
+}
+function foundList(el, printers, onPick) {
+  el.innerHTML = printers.map((p, i) => `<button data-i="${i}"><b>${esc(p.name)}</b><br><span class="hint">${esc(p.host)}</span></button>`).join('');
+  el.querySelectorAll('button').forEach(b => b.onclick = () => onPick(printers[+b.dataset.i]));
+}
+async function search(btn, out, noteEl, onPick) {
+  btn.disabled = true; const old = btn.textContent; btn.textContent = 'Searching…';
+  note(noteEl, 'Looking for printers on your Wi-Fi. This takes a few seconds…');
+  let d; try { d = await api('/api/discover'); } catch (e) { d = { ok: false }; }
+  btn.disabled = false; btn.textContent = old;
+  if (!d.ok || !d.printers.length) {
+    out.innerHTML = '';
+    note(noteEl, "No printer found. Check it's switched on and on the same Wi-Fi, or type its IP address.", 'bad');
+    return;
+  }
+  note(noteEl, d.printers.length === 1 ? 'Found it. Tap it to use it.' : 'Tap your printer.', 'ok');
+  foundList(out, d.printers, onPick);
+}
+async function checkHost(host, noteEl) {
+  if (!host) { note(noteEl, 'Type the IP address first.', 'bad'); return false; }
+  note(noteEl, 'Checking…');
+  const d = await postJSON('/api/test-printer', { printer_host: host });
+  if (d.ok) note(noteEl, `Connected to ${d.info.hostname || 'the printer'}.`, 'ok');
+  else note(noteEl, d.error, 'bad');
+  return d.ok;
+}
+$('w_find').onclick = () => search($('w_find'), $('w_found'), $('w_note'), async (p) => {
+  $('w_host').value = p.host; $('w_found').innerHTML = '';
+  $('w_done').disabled = !(await checkHost(p.host, $('w_note')));
+});
+$('w_test').onclick = async () => { $('w_done').disabled = !(await checkHost($('w_host').value.trim(), $('w_note'))); };
+$('w_host').oninput = () => { $('w_done').disabled = !$('w_host').value.trim(); };
+$('w_done').onclick = async () => {
+  const machine = machineFrom($('w_model'), $('w_nozzle'));
+  $('w_done').disabled = true;
+  note($('w_doneNote'), 'Getting the settings for your printer (the first time can take a minute)…');
+  const p = await api('/api/presets?' + new URLSearchParams({ machine }));
+  const body = { printer_host: $('w_host').value.trim(), machine_preset: machine, setup_done: true };
+  if (p.ok) { body.process_preset = p.default_process; body.filament_preset = p.default_filament; }
+  const d = await postJSON('/api/settings', body);
+  $('w_done').disabled = false;
+  if (!d.ok) { note($('w_doneNote'), d.error || 'Could not save.', 'bad'); return; }
+  note($('w_doneNote'), p.ok ? '' : p.error, p.ok ? '' : 'bad');
+  $('setup').classList.add('hidden'); $('nav').classList.remove('hidden');
+  showTab('print');
+  boot();
 };
 
-$('sendBtn').onclick = async () => {
-  const f = $('file').files[0];
-  if (!f) return;
-  if (!/\.(3mf|stl|obj|step|stp|amf|gcode|zip)$/i.test(f.name)) {
-    note($('sendNote'), `"${f.name}" isn't a file the bridge can print. Pick a .3mf, .stl, .obj, .step, .gcode or .zip file.`, 'bad');
-    return;
-  }
+// --- choosing a file --------------------------------------------------------------------------------
+function resetFile() {
+  FILE = null; CHOICE = [];
+  ['preview', 'plateRow', 'colourCard', 'optCard'].forEach(id => $(id).classList.add('hidden'));
   $('sendBtn').disabled = true;
-  // Read the file on the phone first. Files that are still downloading or only in the cloud
-  // (iCloud, Google Drive) can't be read, and the browser would otherwise just report a network error.
-  note($('sendNote'), 'Opening the file…');
+}
+$('file').onchange = async () => {
+  const f = $('file').files[0];
+  resetFile(); note($('sendNote'), ''); note($('fileNote'), '');
+  $('fileLabel').textContent = f ? f.name : 'Tap to choose a file';
+  $('fileSub').textContent = f ? (f.size / 1048576).toFixed(1) + ' MB · tap to pick another' : '.3mf, .stl, .obj, .step, .gcode or .zip';
+  if (!f) return;
+  if (!EXT_RE.test(f.name)) { note($('fileNote'), `"${f.name}" isn't a file the bridge can print. Pick a .3mf, .stl, .obj, .step, .gcode or .zip file.`, 'bad'); return; }
+  // Read it on the phone first: files still in iCloud or Google Drive can't be read, and the browser
+  // would otherwise only report a network error.
+  note($('fileNote'), 'Opening the file…');
   let body;
   try { body = await f.arrayBuffer(); }
-  catch (e) {
-    $('sendBtn').disabled = false;
-    note($('sendNote'), `Your phone couldn't open "${f.name}". If it's in iCloud or Google Drive, save it to the phone first (or download it again), then pick it from Downloads.`, 'bad');
-    return;
-  }
-  if (!body.byteLength) {
-    $('sendBtn').disabled = false;
-    note($('sendNote'), `"${f.name}" is empty on this phone. Download it again and retry.`, 'bad');
-    return;
-  }
-  note($('sendNote'), 'Sending to the bridge… 0%');
+  catch (e) { note($('fileNote'), `Your phone couldn't open "${f.name}". If it's in iCloud or Google Drive, save it to the phone first (or download it again), then pick it from Downloads.`, 'bad'); return; }
+  if (!body.byteLength) { note($('fileNote'), `"${f.name}" is empty on this phone. Download it again and retry.`, 'bad'); return; }
+  note($('fileNote'), 'Sending to the bridge… 0%');
   const xhr = new XMLHttpRequest();
-  xhr.open('POST', '/api/jobs');
+  xhr.open('POST', '/api/files');
   xhr.setRequestHeader('X-Filename', encodeURIComponent(f.name));
-  xhr.setRequestHeader('X-Plate', $('plate').value || '1');
-  xhr.setRequestHeader('X-Start', $('startNow').checked ? '1' : '0');
-  xhr.setRequestHeader('X-Trust-Gcode', $('trustGcode').checked ? '1' : '0');
-  xhr.setRequestHeader('X-Process', encodeURIComponent($('quality').value || ''));
-  xhr.setRequestHeader('X-Filament', encodeURIComponent($('filament').value || ''));
   if (PIN) xhr.setRequestHeader('X-Bridge-Pin', PIN);
-  xhr.upload.onprogress = (e) => { if (e.lengthComputable) note($('sendNote'), 'Sending to the bridge… ' + Math.round(e.loaded * 100 / e.total) + '%'); };
+  xhr.upload.onprogress = (e) => { if (e.lengthComputable) note($('fileNote'), 'Sending to the bridge… ' + Math.round(e.loaded * 100 / e.total) + '%'); };
   xhr.onload = () => {
-    $('sendBtn').disabled = false;
     let d = {}; try { d = JSON.parse(xhr.responseText); } catch (e) {}
-    if (xhr.status === 401) { showPin(); note($('sendNote'), 'Enter the PIN first.', 'bad'); return; }
-    if (d.ok) { note($('sendNote'), 'Got it. Follow the progress under Recent jobs.', 'ok'); refreshJobs(); }
-    else note($('sendNote'), d.error || 'Something went wrong.', 'bad');
+    if (xhr.status === 401) { showPin(); note($('fileNote'), 'Enter the PIN first.', 'bad'); return; }
+    if (!d.ok) { note($('fileNote'), d.error || 'Something went wrong.', 'bad'); return; }
+    note($('fileNote'), '');
+    showFile(d);
   };
-  xhr.onerror = () => { $('sendBtn').disabled = false; note($('sendNote'), 'The upload of "' + f.name + '" (' + (f.size / 1048576).toFixed(1) + ' MB) was interrupted. Check the PC is on and the bridge window is open, then try again.', 'bad'); };
+  xhr.onerror = () => note($('fileNote'), `The upload of "${f.name}" (${(f.size / 1048576).toFixed(1)} MB) was interrupted. Check the PC is on and the bridge window is open, then try again.`, 'bad');
   xhr.setRequestHeader('Content-Type', 'application/octet-stream');
   xhr.send(body);
 };
 
-const LABEL = { queued: 'Waiting', checking: 'Checking', slicing: 'Slicing', uploading: 'Sending', done: 'Done', error: 'Problem' };
-function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+async function showFile(d) {
+  FILE = d; CHOICE = [];
+  $('preview').classList.remove('hidden');
+  $('pvName').textContent = d.name;
+  const pn = printerName();
+  let made = '';
+  if (d.kind === 'zip') made = 'A .zip download. The model inside will be prepared for your ' + pn + '.';
+  else if (d.ready) made = `Already prepared for your ${pn}. It will be sent as it is.`;
+  else if (d.kind === 'gcode') made = d.made_for ? `G-code for ${d.made_for}.` : 'G-code (printer unknown).';
+  else if (d.made_for) made = `Made for ${d.made_for}. It will be prepared for your ${pn}.`;
+  else made = `It will be prepared for your ${pn}.`;
+  $('pvMade').textContent = made;
+  const img = $('thumb');
+  if (d.thumb) { img.src = `/api/files/${d.file_id}/thumb?plate=${d.plate}&t=${Date.now()}`; img.classList.remove('hidden'); }
+  else img.classList.add('hidden');
+  $('plateRow').classList.toggle('hidden', d.plates.length < 2);
+  fillSelect($('plate'), d.plates.map(String), String(d.plate), p => 'Plate ' + p);
+  $('trustRow').classList.toggle('hidden', !(d.kind === 'gcode' && !d.ready));
+  // Quality and filament settings only matter when the bridge slices the model.
+  $('qualityRow').classList.toggle('hidden', d.ready || d.kind === 'gcode');
+  await refreshBox();
+  renderColours();
+  $('optCard').classList.remove('hidden');
+  $('sendBtn').disabled = false;
+  $('sendBtn').textContent = 'Print on ' + pn;
+}
+$('plate').onchange = async () => {
+  if (!FILE) return;
+  const d = await api(`/api/files/${FILE.file_id}?plate=${$('plate').value}`);
+  if (d.ok) showFile(d); else note($('fileNote'), d.error, 'bad');
+};
+
+function boxReady() { return !!(BOX && BOX.present && BOX.use_box && BOX.slots.some(s => s.loaded)); }
+function suggest(f) {
+  const loaded = BOX.slots.filter(s => s.loaded);
+  if (!loaded.length) return -1;
+  if (FILE && FILE.filaments.length === 1 && /\.(stl|obj|step|stp|amf|zip)$/i.test(FILE.name)) {
+    const a = loaded.find(s => s.active); if (a) return a.index;
+  }
+  const hex = (c) => [1, 3, 5].map(i => parseInt((c || '#FFFFFF').substr(i, 2), 16));
+  const dist = (a, b) => { const x = hex(a), y = hex(b), rm = (x[0] + y[0]) / 2;
+    return (2 + rm / 256) * (x[0] - y[0]) ** 2 + 4 * (x[1] - y[1]) ** 2 + (2 + (255 - rm) / 256) * (x[2] - y[2]) ** 2; };
+  const t = String(f.type || 'PLA').toUpperCase();
+  const same = loaded.filter(s => (s.type || '').toUpperCase() === t);
+  const pool = same.length ? same : loaded;
+  return pool.reduce((best, s) => dist(f.color, s.color) < dist(f.color, best.color) ? s : best).index;
+}
+function renderColours() {
+  const card = $('colourCard'), body = $('colourBody');
+  const fils = (FILE && FILE.filaments) || [];
+  const used = fils.filter(f => f.used !== false);
+  const slicing = FILE && !FILE.ready && FILE.kind !== 'gcode';
+  if (!boxReady()) {
+    $('filamentRow').classList.toggle('hidden', !slicing);
+    if (used.length > 1) {
+      card.classList.remove('hidden'); $('optStep').textContent = '3';
+      const why = BOX && BOX.present && !BOX.use_box ? 'The QIDI Box is switched off in Settings, so' : 'Without a QIDI Box';
+      body.innerHTML = `<div class="pick">${used.map(f => `<span title="${esc(f.type)}">${sw(f.color, 'big')}</span>`).join('')}</div>
+        <p class="hint">This model has ${used.length} colours. ${why} it is printed in one colour.</p>`;
+    } else { card.classList.add('hidden'); $('optStep').textContent = '2'; }
+    return;
+  }
+  $('filamentRow').classList.add('hidden');
+  card.classList.remove('hidden'); $('optStep').textContent = '3';
+  CHOICE = fils.map((f, i) => (CHOICE[i] !== undefined && CHOICE[i] >= 0) ? CHOICE[i] : suggest(f));
+  const loaded = BOX.slots.filter(s => s.loaded);
+  const many = used.length > 1;
+  body.innerHTML = used.map(f => `
+    <div class="cmap" data-i="${f.index}">
+      <div class="top">${many || f.color !== '#FFFFFF' ? sw(f.color, 'big') : ''}
+        <span>${many ? `Colour ${f.index + 1}${f.type ? ' · ' + esc(f.type) : ''} prints with:` : 'Print with:'}</span></div>
+      <div class="pick">${loaded.map(s => `<button data-slot="${s.index}" class="${CHOICE[f.index] === s.index ? 'on' : ''}">
+        ${sw(s.color)}<span>${esc(s.label)} · ${esc(s.name || s.type)}</span></button>`).join('')}</div>
+    </div>`).join('') + '<p class="hint" id="colourHint"></p>';
+  body.querySelectorAll('.cmap').forEach(row => row.querySelectorAll('button').forEach(b => b.onclick = () => {
+    CHOICE[+row.dataset.i] = +b.dataset.slot;
+    row.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    colourHint();
+  }));
+  colourHint();
+}
+function colourHint() {
+  const el = $('colourHint'); if (!el || !FILE) return;
+  const used = FILE.filaments.filter(f => f.used !== false);
+  const slots = new Set(used.map(f => CHOICE[f.index]));
+  let t = used.length > 1
+    ? (slots.size > 1 ? `Printed in ${slots.size} colours from the Box.` : 'Every colour uses the same slot, so it is printed in one colour.')
+    : 'The Box loads this slot when the print starts.';
+  if (!FILE.ready && FILE.kind !== 'gcode') t += ' The filament settings are picked to match what is in each slot.';
+  el.textContent = t;
+}
+
+$('sendBtn').onclick = async () => {
+  if (!FILE) return;
+  $('sendBtn').disabled = true;
+  note($('sendNote'), 'Starting…');
+  const body = { file_id: FILE.file_id, plate: +$('plate').value || FILE.plate, start: $('startNow').checked,
+                 trust_gcode: $('trustGcode').checked, process: $('quality').value };
+  if (boxReady()) body.slots = FILE.filaments.map((f, i) => CHOICE[i] === undefined ? -1 : CHOICE[i]);
+  else { body.use_box = false; body.filament = $('filament').value; }
+  let d; try { d = await postJSON('/api/jobs', body); } catch (e) { $('sendBtn').disabled = false; return; }
+  $('sendBtn').disabled = false;
+  if (d.ok) { note($('sendNote'), 'Got it. Follow the progress under Recent jobs.', 'ok'); refreshJobs(); }
+  else note($('sendNote'), d.error || 'Something went wrong.', 'bad');
+};
+
+// --- jobs ---------------------------------------------------------------------------------------------
+const LABEL = { queued: 'Waiting', checking: 'Checking', slicing: 'Preparing', uploading: 'Sending', done: 'Done', error: 'Problem' };
 let openLogs = new Set();
 async function refreshJobs() {
   let d; try { d = await api('/api/jobs'); } catch (e) { return; }
@@ -335,25 +663,30 @@ async function refreshJobs() {
     <div class="job">
       <div class="state s-${j.state}">${LABEL[j.state] || j.state}</div>
       <div class="name">${esc(j.filename)}</div>
+      ${(j.colours || []).length ? `<div class="jobcols">${j.colours.map(c => sw(c.color || c.model_color)).join('')}</div>` : ''}
       <div class="msg">${esc(j.message)}</div>
       <details data-id="${j.id}" ${openLogs.has(j.id) ? 'open' : ''}><summary>Details</summary><pre>${esc(j.log.join('\n'))}</pre></details>
     </div>`).join('') : '<p class="hint">Nothing sent yet.</p>';
   document.querySelectorAll('#jobs details').forEach(x => x.ontoggle = () => { x.open ? openLogs.add(x.dataset.id) : openLogs.delete(x.dataset.id); });
 }
 
+// --- printer + box ----------------------------------------------------------------------------------
 function fmtTime(s) { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? `${h} h ${m} min` : `${m} min`; }
+const STATES = { standby: 'Ready', ready: 'Ready', printing: 'Printing', paused: 'Paused', complete: 'Finished', cancelled: 'Cancelled', error: 'Error' };
 async function refreshPrinter() {
   let d; try { d = await api('/api/printer'); } catch (e) { return; }
-  const pill = $('printerPill');
+  const pill = $('printerPill'), pn = printerName();
+  $('pTitle').textContent = pn + ' status';
   if (!d.ok) {
     $('controls').classList.add('hidden'); $('nowPrinting').classList.add('hidden');
-    pill.textContent = 'Printer offline';
+    pill.textContent = pn + ' offline'; pill.className = 'bad';
     $('pstatus').innerHTML = `<p class="notice bad">${esc(d.error)}</p>`;
     return;
   }
   const s = d.status, ps = s.print_stats || {}, ds = s.display_status || {};
-  const state = ps.state || 'unknown';
-  pill.textContent = 'Q2: ' + state;
+  const state = ps.state || 'unknown', nice = STATES[state] || state;
+  pill.textContent = pn + ': ' + nice;
+  pill.className = state === 'printing' || state === 'paused' ? 'busy' : (state === 'error' ? 'bad' : 'ok');
   const pct = Math.round((ds.progress || (s.virtual_sdcard || {}).progress || 0) * 100);
   const ex = s.extruder || {}, bed = s.heater_bed || {};
   const active = state === 'printing' || state === 'paused';
@@ -364,14 +697,92 @@ async function refreshPrinter() {
   $('pauseBtn').dataset.action = state === 'paused' ? 'resume' : 'pause';
   const left = pct > 0 && ps.print_duration ? ps.print_duration * (100 - pct) / pct : 0;
   $('pstatus').innerHTML = `
-    ${state === 'printing' || state === 'paused' ? `<div class="bar"><span style="width:${pct}%"></span></div><p class="hint">${pct}% · about ${fmtTime(left)} left</p>` : ''}
-    <div class="stat"><span>State</span><b>${esc(state)}</b></div>
+    ${active ? `<div class="bar"><span style="width:${pct}%"></span></div><p class="hint">${pct}% · about ${fmtTime(left)} left</p>` : ''}
+    <div class="stat"><span>State</span><b>${esc(nice)}</b></div>
     <div class="stat"><span>File</span><b style="word-break:break-all;text-align:right">${esc(ps.filename || '-')}</b></div>
     <div class="stat"><span>Nozzle</span><b>${Math.round(ex.temperature || 0)}° / ${Math.round(ex.target || 0)}°</b></div>
     <div class="stat"><span>Bed</span><b>${Math.round(bed.temperature || 0)}° / ${Math.round(bed.target || 0)}°</b></div>`;
 }
+async function refreshBox() {
+  let d; try { d = await api('/api/box'); } catch (e) { return; }
+  BOX = d.ok ? d : null;
+  const card = $('boxCard');
+  if (!BOX || !BOX.present) { card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  const clim = (BOX.climate || []).map(c => `Box ${c.box}: humidity ${c.humidity == null ? '?' : c.humidity}%${c.temperature != null ? ', ' + Math.round(c.temperature) + '°C' : ''}${c.drying ? ' · drying' : ''}`).join('<br>');
+  const groups = [];
+  for (let b = 1; b <= BOX.boxes; b++) groups.push(BOX.slots.filter(s => s.box === b));
+  $('boxBody').innerHTML = groups.map(g => `<div class="slots" style="margin-bottom:8px">${g.map(s => `
+      <div class="slot ${s.active ? 'active' : ''}">
+        ${sw(s.loaded ? s.color : '', 'big')}
+        <div class="n">Slot ${esc(s.label)}</div>
+        <div class="t">${s.loaded ? esc(s.name || s.type) : 'Empty'}</div>
+        <div class="hint" style="margin:0">${s.loaded ? esc(s.vendor || '') : ''}</div>
+        ${s.active ? '<div class="head">In print head</div>' : ''}
+      </div>`).join('')}</div>`).join('') +
+    (clim ? `<p class="hint">${clim}</p>` : '') +
+    (BOX.use_box ? '' : '<p class="notice">The Box is switched off for the bridge (Settings → Use my QIDI Box).</p>');
+}
 
-$('goPrinter').onclick = () => document.querySelector('nav button[data-tab=printer]').click();
+// --- filament library -------------------------------------------------------------------------------
+const FAMS = ['All', 'PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PA', 'PC', 'PET', 'PPS', 'PVA', 'Other'];
+function famOf(f) { return FAMS.includes(f.family) ? f.family : 'Other'; }
+async function loadLibrary() {
+  if (!LIB) {
+    let d; try { d = await api('/api/filaments'); } catch (e) { return; }
+    if (!d.ok) { $('libList').innerHTML = `<p class="notice bad">${esc(d.error)}</p>`; return; }
+    LIB = d;
+  }
+  $('libIntro').textContent = `${LIB.filaments.length} filaments with tested settings for your ${LIB.printer}. Bed temperatures are for the ${LIB.plate_label}. Tap one for details.`;
+  const present = new Set(LIB.filaments.map(famOf));
+  $('libChips').innerHTML = FAMS.filter(f => f === 'All' || present.has(f))
+    .map(f => `<button data-f="${f}" class="${f === LIBFAM ? 'on' : ''}">${f}</button>`).join('');
+  $('libChips').querySelectorAll('button').forEach(b => b.onclick = () => { LIBFAM = b.dataset.f; loadLibrary(); });
+  renderLibrary();
+  await refreshBox();
+  renderLibBox();
+}
+function filDetails(f) {
+  return `<div class="grid2">
+      <span>Nozzle</span><b>${f.nozzle}°C <span style="font-weight:400">(${f.nozzle_low}-${f.nozzle_high}°C)</span></b>
+      <span>Bed</span><b>${f.bed ? `${f.bed}°C` + (f.bed_first && f.bed_first !== f.bed ? `, first layer ${f.bed_first}°C` : '') : 'Not for this plate'}</b>
+      ${f.chamber ? `<span>Chamber</span><b>${f.chamber}°C</b>` : ''}
+      <span>Cooling fan</span><b>${f.fan}%</b>
+      ${f.flow ? `<span>Max flow</span><b>${f.flow} mm³/s</b>` : ''}
+      ${f.dry ? `<span>Drying</span><b>${f.dry}°C</b>` : ''}
+    </div>`;
+}
+function renderLibrary() {
+  const q = $('libSearch').value.trim().toLowerCase();
+  const list = LIB.filaments.filter(f => (LIBFAM === 'All' || famOf(f) === LIBFAM) &&
+    (!q || (f.short + ' ' + f.type + ' ' + f.vendor).toLowerCase().includes(q)));
+  list.sort((a, b) => (b.name === LIB.default) - (a.name === LIB.default) || (b.vendor === 'QIDI') - (a.vendor === 'QIDI') || a.short.localeCompare(b.short));
+  $('libList').innerHTML = list.length ? list.map(f => `
+    <details class="fil">
+      <summary><div class="nm"><b>${esc(f.short)}</b><span>${esc(f.vendor)} · ${f.nozzle}°C nozzle · ${f.bed ? f.bed + '°C bed' : 'not for this plate'}</span></div>
+        ${f.name === LIB.default ? '<span class="tag def">Default</span>' : `<span class="tag">${esc(f.type)}</span>`}</summary>
+      ${filDetails(f)}
+      ${f.name === LIB.default ? '<p class="hint">Used when there is no Box (or the Box is off).</p>' :
+        `<button class="btn secondary small" data-use="${esc(f.name)}">Use this when there's no Box</button>`}
+    </details>`).join('') : '<p class="hint">No filament matches that search.</p>';
+  $('libList').querySelectorAll('[data-use]').forEach(b => b.onclick = async () => {
+    const d = await postJSON('/api/settings', { filament_preset: b.dataset.use });
+    if (d.ok) { STATE = d.state; LIB.default = b.dataset.use; renderLibrary(); fillFilaments($('filament'), PRESETS.filament || [], b.dataset.use); fillFilaments($('s_filament'), PRESETS.filament || [], b.dataset.use); }
+  });
+}
+function renderLibBox() {
+  if (!boxReady() || !LIB) { $('libBox').classList.add('hidden'); return; }
+  $('libBox').classList.remove('hidden');
+  $('libBoxBody').innerHTML = BOX.slots.filter(s => s.loaded).map(s => {
+    const f = LIB.filaments.find(x => x.name === s.preset);
+    return `<details class="fil"><summary>${sw(s.color, 'big')}<div class="nm"><b>Slot ${esc(s.label)} · ${esc(s.vendor)} ${esc(s.name || s.type)}</b>
+      <span>Printed with: ${esc(f ? f.short : (s.preset || 'default settings').replace(/\s*@.*$/, ''))}</span></div>${s.active ? '<span class="tag def">In head</span>' : ''}</summary>
+      ${f ? filDetails(f) : ''}</details>`;
+  }).join('') + '<p class="hint">The bridge picks these settings from what the printer says is in each slot.</p>';
+}
+$('libSearch').oninput = () => LIB && renderLibrary();
+
+$('goPrinter').onclick = () => showTab('printer');
 
 const DONE = { pause: 'Pausing the print.', resume: 'Resuming the print.', cancel: 'Print cancelled.' };
 async function control(action, label) {
@@ -392,24 +803,32 @@ $('cancelBtn').onclick = () => {
   control('cancel', 'Cancelling');
 };
 
-$('testBtn').onclick = async () => {
-  note($('testNote'), 'Testing…');
-  const d = await api('/api/test-printer', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ printer_host: $('s_host').value, printer_port: $('s_port').value }) });
-  if (d.ok) note($('testNote'), `Connected to ${d.info.hostname || 'the printer'} (Klipper is ${d.info.state || 'running'}). Remember to Save.`, 'ok');
-  else note($('testNote'), d.error, 'bad');
-};
+// --- settings -------------------------------------------------------------------------------------------
+async function machinePicked() {
+  note($('saveNote'), 'Getting the settings for this printer…');
+  const p = await loadPresets(machineFrom($('s_model'), $('s_nozzle')));
+  note($('saveNote'), p && !p.ok ? p.error : '', p && !p.ok ? 'bad' : '');
+}
+$('s_model').onpick = machinePicked;
+$('s_nozzle').onchange = machinePicked;
+$('testBtn').onclick = () => checkHost($('s_host').value.trim(), $('testNote'));
+$('findBtn').onclick = () => search($('findBtn'), $('s_found'), $('testNote'), (p) => {
+  $('s_host').value = p.host; $('s_found').innerHTML = '';
+  note($('testNote'), `Using ${p.name} (${p.host}). Tap Save settings.`, 'ok');
+});
 
 $('saveBtn').onclick = async () => {
   const body = {
     printer_host: $('s_host').value, printer_port: $('s_port').value, printer_api_key: $('s_key').value,
-    slicer_path: $('s_slicer').value, machine_preset: $('s_machine').value, process_preset: $('s_process').value,
-    filament_preset: $('s_filament').value, qidi_box: $('s_box').checked, start_print: $('s_start').checked,
-    virtual_printer_enabled: $('s_studio').checked,
+    slicer_path: $('s_slicer').value, machine_preset: machineFrom($('s_model'), $('s_nozzle')),
+    process_preset: $('s_process').value, filament_preset: $('s_filament').value,
+    use_box: $('s_box').checked, start_print: $('s_start').checked,
+    bed_type: $('s_plate').value, extra_grip: $('s_grip').checked,
+    virtual_printer_enabled: $('s_studio').checked, setup_done: true,
   };
   const pin = $('s_pin').value;
   if (pin) body.pin = pin.trim();
-  const d = await api('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const d = await postJSON('/api/settings', body);
   if (d.ok) {
     if (pin) { PIN = pin.trim(); try { localStorage.setItem('bridgePin', PIN); } catch (e) {} $('s_pin').value = ''; }
     note($('saveNote'), 'Saved.', 'ok');
