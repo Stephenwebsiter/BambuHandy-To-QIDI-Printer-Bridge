@@ -184,7 +184,8 @@ def run_cli(exe: str, inputs: list[str], settings: list[str], filaments: list[st
            "--load-filaments", ";".join(filaments),
            "--arrange", "1" if arrange else "0",
            "--orient", "0",
-           *(["--scale", f"{scale:g}"] if scaled else []),
+           # --scale grows the model around its middle; --ensure-on-bed puts it back on the plate.
+           *(["--scale", f"{scale:g}", "--ensure-on-bed"] if scaled else []),
            "--allow-newer-file",
            "--outputdir", out_dir,
            # Relative on purpose: the slicer puts it inside --outputdir itself.

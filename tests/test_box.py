@@ -179,6 +179,7 @@ class BoxPrintTests(unittest.TestCase):
         self.assertEqual(j["state"], "done", j["log"])
         args = json.loads(open(self.slicer_log).read()[len(before):].strip().splitlines()[-1])
         self.assertEqual(args[args.index("--scale") + 1], "2")
+        self.assertIn("--ensure-on-bed", args)
         p = helpers.make_bambu_project(os.path.join(TMP, "sz.3mf"), plates=2)
         self.assertEqual(threemf.model_size(p, 2), [10.0, 10.0, 10.0])
 
