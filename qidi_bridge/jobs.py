@@ -178,6 +178,9 @@ def _read_box(job: Job, cfg: dict) -> dict | None:
         return None
     if not b.get("present"):
         return None
+    if not b.get("enabled", True):
+        job.log("The QIDI Box is switched off on the printer, so it is not used.")
+        return None
     if not any(s.get("loaded") for s in b["slots"]):
         job.log("The QIDI Box has no filament loaded, so it is not used.")
         return None

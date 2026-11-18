@@ -130,8 +130,10 @@ def read_box(mr: Moonraker) -> dict:
     box_count = _as_int(variables.get("box_count"), 0)
     if not box_count and stepper_names:
         box_count = (len(stepper_names) + 3) // 4
-    if box_count <= 0 or (str(variables.get("enable_box", "1")) in ("0", "False", "false")):
+    if box_count <= 0:
         return {"present": False, "boxes": 0, "slots": [], "enabled": False}
+    # The Box can be switched off on the printer's screen; still show what is in it.
+    enabled = str(variables.get("enable_box", "1")) not in ("0", "False", "false")
     extras = status.get("box_extras") or {}
     decoded = {}
     for b, boxinfo in enumerate(extras.get("boxes") or []):
@@ -222,7 +224,7 @@ def read_box(mr: Moonraker) -> dict:
         if isinstance(boxinfo, dict):
             climate.append({"box": b + 1, "humidity": boxinfo.get("aht20_humidity"),
                             "temperature": boxinfo.get("aht20_temp"), "drying": bool(_as_int(boxinfo.get("dry_state"), 0))})
-    return {"present": True, "boxes": box_count, "slots": slots, "enabled": True, "climate": climate}
+    return {"present": True, "boxes": box_count, "slots": slots, "enabled": enabled, "climate": climate}
 
 
 def tool_slot_script(mapping: list[int]) -> str:

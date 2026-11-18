@@ -40,6 +40,17 @@ class BoxReadingTests(unittest.TestCase):
         self.assertEqual(b["slots"][3]["tools"], [0])
         self.assertEqual(b["climate"][0]["humidity"], 59)
 
+    def test_box_switched_off_still_listed(self):
+        vars_ = self.printer.box["status"]["save_variables"]["variables"]
+        vars_["enable_box"] = 0
+        try:
+            b = box.read_box(Moonraker("127.0.0.1", self.printer.port))
+        finally:
+            vars_["enable_box"] = 1
+        self.assertTrue(b["present"])
+        self.assertFalse(b["enabled"])
+        self.assertEqual(len(b["slots"]), 4)
+
     def test_suggest_mapping_by_colour_and_material(self):
         b = box.read_box(Moonraker("127.0.0.1", self.printer.port))
         fils = [{"color": "#FF0000", "type": "PLA"}, {"color": "#0000FF", "type": "PLA"},

@@ -611,7 +611,7 @@ $('plate').onchange = async () => {
   if (d.ok) showFile(d); else note($('fileNote'), d.error, 'bad');
 };
 
-function boxReady() { return !!(BOX && BOX.present && BOX.use_box && BOX.slots.some(s => s.loaded)); }
+function boxReady() { return !!(BOX && BOX.present && BOX.enabled !== false && BOX.use_box && BOX.slots.some(s => s.loaded)); }
 function suggest(f) {
   const loaded = BOX.slots.filter(s => s.loaded);
   if (!loaded.length) return -1;
@@ -635,7 +635,8 @@ function renderColours() {
     $('filamentRow').classList.toggle('hidden', !slicing);
     if (used.length > 1) {
       card.classList.remove('hidden'); $('optStep').textContent = '3';
-      const why = BOX && BOX.present && !BOX.use_box ? 'The QIDI Box is switched off in Settings, so' : 'Without a QIDI Box';
+      const why = BOX && BOX.present && BOX.enabled === false ? 'The QIDI Box is switched off on the printer, so'
+        : BOX && BOX.present && !BOX.use_box ? 'The QIDI Box is switched off in Settings, so' : 'Without a QIDI Box';
       body.innerHTML = `<div class="pick">${used.map(f => `<span title="${esc(f.type)}">${sw(f.color, 'big')}</span>`).join('')}</div>
         <p class="hint">This model has ${used.length} colours. ${why} it is printed in one colour.</p>`;
     } else { card.classList.add('hidden'); $('optStep').textContent = '2'; }
@@ -755,6 +756,7 @@ async function refreshBox() {
         ${s.active ? '<div class="head">In print head</div>' : ''}
       </div>`).join('')}</div>`).join('') +
     (clim ? `<p class="hint">${clim}</p>` : '') +
+    (BOX.enabled === false ? `<p class="notice bad">The Box is switched off on the ${esc(printerName())}, so prints use only the filament in the print head. Turn the Box on in the printer's own settings screen to print in colour.</p>` : '') +
     (BOX.use_box ? '' : '<p class="notice">The Box is switched off for the bridge (Settings → Use my QIDI Box).</p>');
 }
 
