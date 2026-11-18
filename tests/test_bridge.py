@@ -182,6 +182,10 @@ class EndToEndTests(unittest.TestCase):
     def test_page_and_presets(self):
         with urllib.request.urlopen(self.base + "/") as r:
             self.assertIn(b"QIDI Print Bridge", r.read())
+        with urllib.request.urlopen(self.base + "/guide") as r:
+            g = r.read().decode()
+        self.assertIn('<h2 id="troubleshooting">Troubleshooting</h2>', g)
+        self.assertIn('href="#colours-and-the-qidi-box"', g)
         with urllib.request.urlopen(self.base + "/api/presets") as r:
             p = json.loads(r.read())
         self.assertEqual(p["machine"], ["Qidi Q2 0.4 nozzle"])

@@ -6,41 +6,51 @@
 <title>QIDI Print Bridge</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg">
-<meta name="theme-color" content="#1f6feb">
+<meta name="theme-color" content="#F6F1E7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <style>
 :root {
-  --bg: #f4f6f8; --card: #ffffff; --text: #1b1f24; --muted: #5d6773; --line: #dde2e7;
-  --accent: #1f6feb; --accent-text: #ffffff; --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e;
-  --chip: #eef2f6; --sel: #e6f0ff;
+  /* Warm "workshop" colours: paper, ink and a terracotta accent. */
+  --bg: #F6F1E7; --card: #FFFDF8; --text: #2B2620; --muted: #776B5D; --line: #E6DCCB;
+  --accent: #C4553B; --accent-text: #FFFFFF; --ok: #4E7A36; --warn: #A8720C; --bad: #B3261E;
+  --chip: #EFE6D6; --sel: #F8E4DC; --shadow: 0 1px 0 rgba(80, 60, 30, .06), 0 6px 18px -12px rgba(80, 60, 30, .25);
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #0f1419; --card: #182028; --text: #e6edf3; --muted: #9aa6b2; --line: #2b3640;
-          --accent: #4493f8; --accent-text: #0b1117; --ok: #3fb950; --warn: #d29922; --bad: #f85149; --chip: #222c36; --sel: #1c2d44; }
+  :root { --bg: #1C1814; --card: #26211C; --text: #F1E9DC; --muted: #B3A795; --line: #3A322A;
+          --accent: #E0795D; --accent-text: #1C1814; --ok: #8DBF6B; --warn: #E0A93B; --bad: #F07A70;
+          --chip: #312A23; --sel: #3D2A22; --shadow: none; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text);
        font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-header { padding: 18px 16px 8px; max-width: 640px; margin: 0 auto; display: flex; align-items: center; gap: 10px; }
-header h1 { font-size: 20px; margin: 0; flex: 1; }
-#printerPill { font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--chip); color: var(--muted); white-space: nowrap; }
+header { padding: 20px 16px 10px; max-width: 640px; margin: 0 auto; display: flex; align-items: center; gap: 12px; }
+header .logo { width: 40px; height: 40px; flex: none; }
+header .titles { flex: 1; min-width: 0; }
+header h1 { font: 600 22px/1.1 var(--serif); margin: 0; letter-spacing: -.01em; }
+header .sub { font-size: 13px; color: var(--muted); }
+header a.help { font-size: 14px; color: var(--accent); text-decoration: none; font-weight: 600; padding: 6px 2px; }
+#printerPill { font-size: 13px; color: var(--muted); white-space: nowrap; }
+#printerPill::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; margin-right: 6px; vertical-align: 1px; }
 #printerPill.ok { color: var(--ok); } #printerPill.busy { color: var(--warn); } #printerPill.bad { color: var(--bad); }
-nav { max-width: 640px; margin: 0 auto; padding: 0 16px; display: flex; gap: 6px; }
-nav button { flex: 1; border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 10px; border-radius: 10px; font: inherit; }
-nav button.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
-main { max-width: 640px; margin: 0 auto; padding: 12px 16px 40px; }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
-.card h2 { font-size: 16px; margin: 0 0 10px; }
-.step { display: inline-flex; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--accent-text);
-        font-size: 13px; align-items: center; justify-content: center; margin-right: 6px; vertical-align: 1px; }
+nav { max-width: 640px; margin: 0 auto; padding: 0 16px; display: flex; gap: 2px; border-bottom: 1px solid var(--line); }
+nav button { flex: 1; border: 0; border-bottom: 3px solid transparent; background: none; color: var(--muted); padding: 10px 4px 9px;
+             font: inherit; font-size: 15px; margin-bottom: -1px; }
+nav button.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+main { max-width: 640px; margin: 0 auto; padding: 16px 16px 48px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 18px; margin-bottom: 16px; box-shadow: var(--shadow); }
+.card h2 { font: 600 19px/1.25 var(--serif); margin: 0 0 10px; }
+.step { display: inline-flex; width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--accent); color: var(--accent);
+        font: 700 14px/1 system-ui, sans-serif; align-items: center; justify-content: center; margin-right: 8px; vertical-align: 2px; }
 label { display: block; font-size: 14px; color: var(--muted); margin: 12px 0 4px; }
 input[type=text], input[type=number], input[type=password], select {
   width: 100%; padding: 11px 12px; font: inherit; color: var(--text); background: var(--bg);
   border: 1px solid var(--line); border-radius: 10px; }
 .check { display: flex; gap: 10px; align-items: flex-start; margin: 12px 0 0; color: var(--text); font-size: 15px; }
 .check input { width: 20px; height: 20px; margin: 1px 0 0; flex: none; }
-.btn { display: block; width: 100%; padding: 14px; margin-top: 16px; font: 600 16px/1 inherit; font-family: inherit;
-       border-radius: 12px; border: 0; background: var(--accent); color: var(--accent-text); }
+.btn { display: block; width: 100%; padding: 15px; margin-top: 16px; font: 600 17px/1 inherit; font-family: inherit;
+       border-radius: 14px; border: 0; background: var(--accent); color: var(--accent-text); }
+.btn:active { transform: translateY(1px); }
 .btn.secondary { background: var(--chip); color: var(--text); font-weight: 500; }
 .btn.small { padding: 10px; margin-top: 10px; font-size: 15px; }
 .btn:disabled { opacity: .5; }
@@ -122,8 +132,12 @@ nav button { padding: 10px 4px; }
 </head>
 <body>
 <header>
-  <h1>QIDI Print Bridge</h1>
-  <span id="printerPill">Checking printer…</span>
+  <img class="logo" src="/icon.svg" alt="">
+  <div class="titles">
+    <h1>Print Bridge</h1>
+    <div class="sub"><span id="printerPill">Checking printer…</span></div>
+  </div>
+  <a class="help" href="/guide" target="_blank" rel="noopener">Help</a>
 </header>
 <nav id="nav">
   <button data-tab="print" class="on">Print</button>
@@ -267,7 +281,8 @@ nav button { padding: 10px 4px; }
         <li>Tap <b>Download</b> and save the <b>.3mf</b> (or .stl) to your phone. If you use Google Drive, save it to the phone itself.</li>
         <li>Come back here, tap <b>Choose a file</b>, check the colours, then tap <b>Print</b>.</li>
       </ol>
-      <p class="hint">Bambu files are re-prepared with the right settings for your QIDI printer automatically.</p>
+      <p class="hint">Bambu files are re-prepared with the right settings for your QIDI printer automatically.
+        New here? <a href="/guide" target="_blank" rel="noopener" style="color:var(--accent)">Read the full guide</a>.</p>
     </div>
   </section>
 

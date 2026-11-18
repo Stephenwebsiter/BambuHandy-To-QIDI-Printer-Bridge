@@ -143,6 +143,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/manifest.webmanifest":
             with open(os.path.join(WEB_DIR, "manifest.webmanifest"), "rb") as fh:
                 return self._send(200, fh.read(), "application/manifest+json")
+        if path in ("/guide", "/help"):
+            from . import guide
+            return self._send(200, guide.page(), "text/html; charset=utf-8")
         if path == "/icon.svg":
             with open(os.path.join(WEB_DIR, "icon.svg"), "rb") as fh:
                 return self._send(200, fh.read(), "image/svg+xml")
