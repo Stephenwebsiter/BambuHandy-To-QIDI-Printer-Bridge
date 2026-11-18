@@ -18,6 +18,21 @@ MAX_UPLOAD = 600 * 1024 * 1024
 ALLOWED_EXT = (".3mf", ".stl", ".obj", ".step", ".stp", ".amf", ".gcode", ".zip")
 
 
+LOG_PATH = os.path.join(config.DATA_DIR, "bridge.log")
+
+
+def write_log(line: str):
+    """Keep a copy of the bridge's log in data/bridge.log for troubleshooting."""
+    try:
+        os.makedirs(config.DATA_DIR, exist_ok=True)
+        if os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > 2_000_000:
+            os.replace(LOG_PATH, LOG_PATH + ".old")
+        with open(LOG_PATH, "a", encoding="utf-8") as fh:
+            fh.write(line.rstrip() + "\n")
+    except OSError:
+        pass
+
+
 def local_ips() -> list[str]:
     ips = set()
     try:
@@ -39,9 +54,19 @@ class Handler(BaseHTTPRequestHandler):
     server_version = f"QidiBridge/{__version__}"
     jobs: JobManager = None  # set in serve()
 
-    def log_message(self, fmt, *args):  # quieter console
-        if not self.path.startswith("/api/jobs") and not self.path.startswith("/api/printer"):
-            super().log_message(fmt, *args)
+    def log_message(self, fmt, *args):
+        line = "%s - [%s] %s" % (self.address_string(), self.log_date_time_string(), fmt % args)
+        write_log(line)
+        # Keep the console quiet for the page's regular status checks.
+        if not (self.command == "GET" and (self.path.startswith("/api/jobs") or self.path.startswith("/api/printer"))):
+            print(line, flush=True)
+
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except (ConnectionError, TimeoutError) as e:
+            write_log(f"{self.client_address[0]} - connection problem: {e!r}")
+            raise
 
     # -- helpers ---------------------------------------------------------
     def _send(self, code: int, body: bytes, ctype: str):
@@ -172,7 +197,8 @@ class Handler(BaseHTTPRequestHandler):
     def _receive_upload(self):
         filename = urllib.parse.unquote(self.headers.get("X-Filename") or "")
         length = int(self.headers.get("Content-Length") or 0)
-        self.log_message("upload %r, %d bytes", filename, length)
+        self.log_message("upload %r, %d bytes, headers: %s", filename, length,
+                         {k: v for k, v in self.headers.items() if k.lower() not in ("cookie",)})
         if not filename.lower().endswith(ALLOWED_EXT):
             self._drain()
             return self._error(f"'{filename}' isn't a file the bridge can print. Pick a .3mf, .stl, .obj, "
@@ -200,7 +226,9 @@ class Handler(BaseHTTPRequestHandler):
                 fh.write(chunk)
                 remaining -= len(chunk)
         if remaining:
+            self.log_message("upload %r cut off: got %d of %d bytes", filename, length - remaining, length)
             return self._error("The upload was cut off. Please try again.")
+        self.log_message("upload %r received in full", filename)
         self.jobs.submit(job)
         return self._json({"ok": True, "job": job.to_dict()})
 

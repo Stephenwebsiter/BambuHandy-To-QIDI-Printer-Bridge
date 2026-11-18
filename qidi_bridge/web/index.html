@@ -278,7 +278,7 @@ $('file').onchange = () => {
   $('sendBtn').disabled = !f;
 };
 
-$('sendBtn').onclick = () => {
+$('sendBtn').onclick = async () => {
   const f = $('file').files[0];
   if (!f) return;
   if (!/\.(3mf|stl|obj|step|stp|amf|gcode|zip)$/i.test(f.name)) {
@@ -286,6 +286,21 @@ $('sendBtn').onclick = () => {
     return;
   }
   $('sendBtn').disabled = true;
+  // Read the file on the phone first. Files that are still downloading or only in the cloud
+  // (iCloud, Google Drive) can't be read, and the browser would otherwise just report a network error.
+  note($('sendNote'), 'Opening the file…');
+  let body;
+  try { body = await f.arrayBuffer(); }
+  catch (e) {
+    $('sendBtn').disabled = false;
+    note($('sendNote'), `Your phone couldn't open "${f.name}". If it's in iCloud or Google Drive, save it to the phone first (or download it again), then pick it from Downloads.`, 'bad');
+    return;
+  }
+  if (!body.byteLength) {
+    $('sendBtn').disabled = false;
+    note($('sendNote'), `"${f.name}" is empty on this phone. Download it again and retry.`, 'bad');
+    return;
+  }
   note($('sendNote'), 'Sending to the bridge… 0%');
   const xhr = new XMLHttpRequest();
   xhr.open('POST', '/api/jobs');
@@ -305,7 +320,8 @@ $('sendBtn').onclick = () => {
     else note($('sendNote'), d.error || 'Something went wrong.', 'bad');
   };
   xhr.onerror = () => { $('sendBtn').disabled = false; note($('sendNote'), 'The upload of "' + f.name + '" (' + (f.size / 1048576).toFixed(1) + ' MB) was interrupted. Check the PC is on and the bridge window is open, then try again.', 'bad'); };
-  xhr.send(f);
+  xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+  xhr.send(body);
 };
 
 const LABEL = { queued: 'Waiting', checking: 'Checking', slicing: 'Slicing', uploading: 'Sending', done: 'Done', error: 'Problem' };
