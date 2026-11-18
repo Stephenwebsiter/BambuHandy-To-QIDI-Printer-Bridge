@@ -72,6 +72,8 @@ Re-run `Set up Bambu Studio.bat` after a Bambu Studio update, because updates re
 - **"No slicer found"**: install OrcaSlicer, or put the full path to `orca-slicer.exe` in Settings → Slicer program.
 - **Phone can't open the page**: make sure the phone is on the home Wi-Fi (not mobile data) and that Windows
   Firewall allowed Python on private networks.
+- **"Upload was interrupted" on Android**: the file is probably in Google Drive. Open it in the Drive app,
+  tap ⋮ → Download, then pick it from **Downloads** on the bridge page.
 - **Slicing failed**: open the job's **Details** on the Print tab. Sending the plain `.stl` usually works when a
   complicated project doesn't.
 
