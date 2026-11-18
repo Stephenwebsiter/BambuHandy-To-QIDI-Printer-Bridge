@@ -186,6 +186,36 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn("QIDI PLA Rapido @Qidi Q2 0.4 nozzle", p["filament"])
 
 
+    def test_wrong_file_type_gets_a_clear_answer(self):
+        # A big body with an unsupported name must still get a JSON answer, not a dropped connection.
+        req = urllib.request.Request(self.base + "/api/jobs", data=b"x" * 3_000_000, method="POST")
+        req.add_header("X-Filename", "photo.jpg")
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            urllib.request.urlopen(req)
+        self.assertIn("photo.jpg", json.loads(cm.exception.read())["error"])
+
+    def test_zip_with_stls(self):
+        import zipfile
+        stl = helpers.write_ascii_stl(os.path.join(TMP, "part.stl"))
+        z = os.path.join(TMP, "model_files.zip")
+        with zipfile.ZipFile(z, "w") as zf:
+            zf.write(stl, "files/part_a.stl")
+            zf.write(stl, "files/part_b.stl")
+            zf.writestr("images/cover.png", b"png")
+        j = self.send(z)
+        self.assertEqual(j["state"], "done", j["log"])
+        self.assertIn(b"inputs = 1_part_a.stl,2_part_b.stl", self.printer.uploads[0]["body"])
+
+    def test_zip_with_3mf(self):
+        import zipfile
+        p = helpers.make_bambu_project(os.path.join(TMP, "inzip.3mf"), plates=1, sliced_for="Qidi Q2")
+        z = os.path.join(TMP, "model3mf.zip")
+        with zipfile.ZipFile(z, "w") as zf:
+            zf.write(p, "Benchy.3mf")
+        j = self.send(z)
+        self.assertEqual(j["state"], "done", j["log"])
+        self.assertIn(b"G28 ; plate 1", self.printer.uploads[0]["body"])
+
     def test_pause_resume_cancel(self):
         for action in ("pause", "resume", "cancel"):
             req = urllib.request.Request(self.base + "/api/printer/" + action, data=b"", method="POST")

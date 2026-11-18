@@ -90,8 +90,8 @@ ol { padding-left: 20px; margin: 6px 0 0; } ol li { margin: 4px 0; font-size: 14
       <h2>Send a model to your Q2</h2>
       <label class="drop" id="drop">
         <strong id="fileLabel">Tap to choose a file</strong>
-        <span id="fileSub">.3mf, .stl, .obj, .step or .gcode</span>
-        <input id="file" type="file" accept=".3mf,.stl,.obj,.step,.stp,.amf,.gcode,model/3mf,model/stl,application/octet-stream">
+        <span id="fileSub">.3mf, .stl, .obj, .step, .gcode or .zip</span>
+        <input id="file" type="file" accept=".3mf,.stl,.obj,.step,.stp,.amf,.gcode,.zip,model/3mf,model/stl,application/zip,application/octet-stream">
       </label>
       <div class="row">
         <div>
@@ -273,7 +273,7 @@ $('s_machine').onchange = () => loadPresets($('s_machine').value);
 $('file').onchange = () => {
   const f = $('file').files[0];
   $('fileLabel').textContent = f ? f.name : 'Tap to choose a file';
-  $('fileSub').textContent = f ? (f.size / 1048576).toFixed(1) + ' MB' : '.3mf, .stl, .obj, .step or .gcode';
+  $('fileSub').textContent = f ? (f.size / 1048576).toFixed(1) + ' MB' : '.3mf, .stl, .obj, .step, .gcode or .zip';
   $('trustRow').classList.toggle('hidden', !(f && f.name.toLowerCase().endsWith('.gcode')));
   $('sendBtn').disabled = !f;
 };
@@ -281,6 +281,10 @@ $('file').onchange = () => {
 $('sendBtn').onclick = () => {
   const f = $('file').files[0];
   if (!f) return;
+  if (!/\.(3mf|stl|obj|step|stp|amf|gcode|zip)$/i.test(f.name)) {
+    note($('sendNote'), `"${f.name}" isn't a file the bridge can print. Pick a .3mf, .stl, .obj, .step, .gcode or .zip file.`, 'bad');
+    return;
+  }
   $('sendBtn').disabled = true;
   note($('sendNote'), 'Sending to the bridge… 0%');
   const xhr = new XMLHttpRequest();
@@ -300,7 +304,7 @@ $('sendBtn').onclick = () => {
     if (d.ok) { note($('sendNote'), 'Got it. Follow the progress under Recent jobs.', 'ok'); refreshJobs(); }
     else note($('sendNote'), d.error || 'Something went wrong.', 'bad');
   };
-  xhr.onerror = () => { $('sendBtn').disabled = false; note($('sendNote'), 'Could not reach the bridge. Is the PC on and the bridge running?', 'bad'); };
+  xhr.onerror = () => { $('sendBtn').disabled = false; note($('sendNote'), 'The upload of "' + f.name + '" (' + (f.size / 1048576).toFixed(1) + ' MB) was interrupted. Check the PC is on and the bridge window is open, then try again.', 'bad'); };
   xhr.send(f);
 };
 

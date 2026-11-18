@@ -15,7 +15,7 @@ from .moonraker import Moonraker, MoonrakerError
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 MAX_UPLOAD = 600 * 1024 * 1024
-ALLOWED_EXT = (".3mf", ".stl", ".obj", ".step", ".stp", ".amf", ".gcode")
+ALLOWED_EXT = (".3mf", ".stl", ".obj", ".step", ".stp", ".amf", ".gcode", ".zip")
 
 
 def local_ips() -> list[str]:
@@ -113,6 +113,7 @@ class Handler(BaseHTTPRequestHandler):
         path = url.path
         cfg = config.load()
         if not self._authorized(cfg):
+            self._drain()
             return self._error("Wrong or missing PIN.", 401)
         if path == "/api/settings":
             data = self._body_json()
@@ -144,14 +145,42 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": str(e)})
         return self._error("Not found", 404)
 
+    def _drain(self):
+        """Read and throw away the request body.
+
+        Answering before the phone has finished sending makes the connection reset,
+        and the page then only sees "could not reach the bridge" instead of the reason.
+        """
+        try:
+            remaining = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            remaining = 0
+        while remaining > 0:
+            chunk = self.rfile.read(min(1 << 20, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+
     def _upload(self, cfg: dict):
+        try:
+            return self._receive_upload()
+        except Exception as e:  # never drop the connection without an answer
+            self.log_error("upload failed: %r", e)
+            self._drain()
+            return self._error(f"The bridge could not take the file: {e}", 500)
+
+    def _receive_upload(self):
         filename = urllib.parse.unquote(self.headers.get("X-Filename") or "")
-        if not filename.lower().endswith(ALLOWED_EXT):
-            return self._error("Pick a .3mf, .stl, .obj, .step or .gcode file.")
         length = int(self.headers.get("Content-Length") or 0)
+        self.log_message("upload %r, %d bytes", filename, length)
+        if not filename.lower().endswith(ALLOWED_EXT):
+            self._drain()
+            return self._error(f"'{filename}' isn't a file the bridge can print. Pick a .3mf, .stl, .obj, "
+                               ".step, .gcode or .zip file.")
         if length <= 0:
             return self._error("The file was empty.")
         if length > MAX_UPLOAD:
+            self._drain()
             return self._error("That file is too big (over 600 MB).", 413)
         try:
             plate = max(1, int(self.headers.get("X-Plate") or 1))

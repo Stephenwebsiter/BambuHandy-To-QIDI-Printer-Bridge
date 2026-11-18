@@ -114,9 +114,48 @@ class JobManager:
                 job.finished = time.time()
 
 
+def unpack_zip(job: Job) -> str:
+    """MakerWorld and others often hand out a .zip. Use the 3MF inside, or all the STL/OBJ/STEP files."""
+    import zipfile
+    out = os.path.join(job.dir, "unzipped")
+    os.makedirs(out, exist_ok=True)
+    try:
+        z = zipfile.ZipFile(job.path)
+    except zipfile.BadZipFile as e:
+        raise RuntimeError("This .zip file looks damaged.") from e
+    with z:
+        names = [n for n in z.namelist() if not n.endswith("/") and "__MACOSX" not in n]
+        pick = [n for n in names if n.lower().endswith(".3mf")][:1]
+        if not pick:
+            pick = [n for n in names if n.lower().endswith((".stl", ".obj", ".step", ".stp"))]
+        if not pick:
+            pick = [n for n in names if n.lower().endswith(".gcode")][:1]
+        if not pick:
+            raise RuntimeError("The .zip has no 3MF, STL, OBJ, STEP or G-code file inside.")
+        paths = []
+        for i, n in enumerate(pick):
+            dest = os.path.join(out, f"{i + 1}_{safe_filename(n)}")
+            with z.open(n) as src, open(dest, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+            paths.append(dest)
+    job.log("Inside the zip: " + ", ".join(os.path.basename(n) for n in pick))
+    if len(paths) == 1:
+        return paths[0]
+    # Several separate models: slice them together on one plate.
+    return paths
+
+
 def process_job(job: Job):
     cfg = config.load()
     job.set("checking", "Looking at the file")
+    if job.path.lower().endswith(".zip"):
+        unpacked = unpack_zip(job)
+        if isinstance(unpacked, list):
+            job.set("slicing", f"Preparing {len(unpacked)} models for the Q2 (this can take a minute or two)")
+            gcode_path = slicer.slice_files_for_q2(cfg, unpacked, os.path.join(job.dir, "slice"), job.log,
+                                                   process=job.process, filament=job.filament)
+            return send_to_printer(job, cfg, gcode_path)
+        job.path = unpacked
     info = threemf.inspect(job.path)
     model = info.get("printer_model")
     job.log(f"File type: {info['kind']}, made for: {model or 'unknown printer'}, plates: {info['plates']}")
@@ -141,6 +180,10 @@ def process_job(job: Job):
         gcode_path = slicer.slice_for_q2(cfg, job.path, plate, os.path.join(job.dir, "slice"), job.log,
                                          process=job.process, filament=job.filament)
 
+    send_to_printer(job, cfg, gcode_path)
+
+
+def send_to_printer(job: Job, cfg: dict, gcode_path: str):
     job.remote_name = gcode_name_for(job.filename)
     action = "Sending to the Q2 and starting the print" if job.start else "Sending to the Q2"
     job.set("uploading", action)

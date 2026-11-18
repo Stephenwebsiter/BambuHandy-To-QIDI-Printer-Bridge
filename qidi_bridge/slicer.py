@@ -124,6 +124,30 @@ def run_cli(exe: str, inputs: list[str], settings: list[str], filaments: list[st
     raise SliceError(f"The slicer could not slice this model: {reason}")
 
 
+def slice_files_for_q2(cfg: dict, files: list[str], work_dir: str, log,
+                       process: str | None = None, filament: str | None = None) -> str:
+    """Slice several plain model files together on one plate."""
+    exe, m_file, p_file, f_file = _prepare(cfg, work_dir, log, process, filament)
+    return run_cli(exe, files, [m_file, p_file], [f_file], os.path.join(work_dir, "out"), 0, True, log)
+
+
+def _prepare(cfg, work_dir, log, process, filament):
+    exe = resolve_slicer(cfg)
+    lib = library(exe, log=log)
+    machine = cfg.get("machine_preset") or "Qidi Q2 0.4 nozzle"
+    process = process or cfg.get("process_preset")
+    filament = filament or cfg.get("filament_preset")
+    log(f"Slicer: {exe}")
+    log(f"Settings: printer '{machine}', quality '{process}', filament '{filament}'")
+    preset_dir = os.path.join(work_dir, "presets")
+    try:
+        return (exe, lib.write_resolved("machine", machine, preset_dir),
+                lib.write_resolved("process", process, preset_dir),
+                lib.write_resolved("filament", filament, preset_dir))
+    except KeyError as e:
+        raise SliceError(str(e.args[0]) + " Pick another one in Settings.") from e
+
+
 def slice_for_q2(cfg: dict, src: str, plate: int, work_dir: str, log,
                  process: str | None = None, filament: str | None = None) -> str:
     """Slice `src` with QIDI Q2 settings and return the path of the resulting G-code."""
