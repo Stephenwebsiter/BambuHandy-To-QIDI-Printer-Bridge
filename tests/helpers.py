@@ -18,6 +18,7 @@ class FakeMoonraker:
         self.actions = []
         self.gcode = []
         self.box = None
+        self.accept_filament = True
         if box:
             with open(os.path.join(FIXTURES, box)) as fh:
                 self.box = json.load(fh)
@@ -64,7 +65,15 @@ class FakeMoonraker:
                     return self._json({"item": {"path": "x.gcode", "root": "gcodes"}, "print_started": True})
                 if self.path.startswith("/printer/gcode/script"):
                     from urllib.parse import parse_qs, urlparse
-                    outer.gcode.append(parse_qs(urlparse(self.path).query)["script"][0])
+                    script = parse_qs(urlparse(self.path).query)["script"][0]
+                    outer.gcode.append(script)
+                    import re as _re
+                    m = _re.match(r"UPDATE_FILAMENT_INFORMATION SLOT=(\d+) COLOR='(\w+)' VENDOR='([^']*)' FILAMENT='([^']*)'", script)
+                    if m and outer.box and outer.accept_filament:
+                        n = int(m.group(1))
+                        fi = outer.box["status"]["box_extras"]["boxes"][n // 4]["filament_info"][n % 4]
+                        fi.update(color_rgb_str=["#" + m.group(2)], vendor_str=m.group(3), filament_str=m.group(4),
+                                  filament_type=m.group(4).split()[0])
                     return self._json({"result": "ok"})
                 if self.path.startswith("/printer/print/"):
                     outer.actions.append(self.path.rsplit("/", 1)[1])

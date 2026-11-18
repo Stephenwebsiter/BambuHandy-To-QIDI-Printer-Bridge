@@ -163,7 +163,8 @@ class BoxPrintTests(unittest.TestCase):
         body = self.printer.uploads[0]["body"]
         self.assertIn(b"colours = #FF362D|#1353AB", body)
         self.assertIn(b"inputs = two.3mf", body)
-        self.assertEqual(self.printer.gcode[-1], "SAVE_VARIABLE VARIABLE=value_t0 VALUE=\"'slot1'\"\n"
+        self.assertEqual(self.printer.gcode[-1], "SAVE_VARIABLE VARIABLE=enable_box VALUE=1\n"
+                                                 "SAVE_VARIABLE VARIABLE=value_t0 VALUE=\"'slot1'\"\n"
                                                  "SAVE_VARIABLE VARIABLE=value_t1 VALUE=\"'slot3'\"")
         self.assertEqual([c["slot"] for c in j["colours"]], [1, 3])
 
@@ -182,6 +183,50 @@ class BoxPrintTests(unittest.TestCase):
         self.assertIn("--ensure-on-bed", args)
         p = helpers.make_bambu_project(os.path.join(TMP, "sz.3mf"), plates=2)
         self.assertEqual(threemf.model_size(p, 2), [10.0, 10.0, 10.0])
+
+    def test_change_slot_from_phone(self):
+        import copy
+        saved = copy.deepcopy(self.printer.box)
+        try:
+            with urllib.request.urlopen(self.base + "/api/box") as r:
+                b = json.loads(r.read())
+            self.assertIn("PLA Rapido", b["options"]["QIDI"])
+            self.assertIn("PLA", b["options"]["Generic"])
+            res = self.post("/api/box/set", json.dumps({"slot": 2, "color": "#1353ab", "vendor": "QIDI",
+                                                        "filament": "PLA Rapido"}).encode(),
+                            {"Content-Type": "application/json"})
+            self.assertTrue(res["ok"], res)
+            self.assertEqual(self.printer.gcode[-1],
+                             "UPDATE_FILAMENT_INFORMATION SLOT=2 COLOR='1353AB' VENDOR='QIDI' FILAMENT='PLA Rapido'")
+            self.assertEqual(res["box"]["slots"][2]["name"], "PLA Rapido")
+            # A filament the printer doesn't know is reported, not silently "saved".
+            self.printer.accept_filament = False
+            res = self.post("/api/box/set", json.dumps({"slot": 1, "color": "FF0000", "vendor": "QIDI",
+                                                        "filament": "PLA Unknown"}).encode(),
+                            {"Content-Type": "application/json"})
+            self.assertFalse(res["ok"])
+            # Bad input never reaches the printer.
+            n = len(self.printer.gcode)
+            res = self.post("/api/box/set", json.dumps({"slot": 1, "color": "red", "vendor": "QIDI",
+                                                        "filament": "PLA'; G28"}).encode(),
+                            {"Content-Type": "application/json"})
+            self.assertFalse(res["ok"])
+            self.assertEqual(len(self.printer.gcode), n)
+        finally:
+            self.printer.accept_filament = True
+            self.printer.box = saved
+
+    def test_load_unload_blocked_while_printing(self):
+        res = self.post("/api/box/load", json.dumps({"slot": 1}).encode(), {"Content-Type": "application/json"})
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(self.printer.gcode[-1], "LOAD_FILAMENT_CONTROL SLOT=1")
+        self.printer.state = "printing"
+        try:
+            res = self.post("/api/box/unload", json.dumps({"slot": 1}).encode(), {"Content-Type": "application/json"})
+            self.assertFalse(res["ok"])
+            self.assertEqual(self.printer.gcode[-1], "LOAD_FILAMENT_CONTROL SLOT=1")
+        finally:
+            self.printer.state = "standby"
 
     def test_filament_library(self):
         with urllib.request.urlopen(self.base + "/api/filaments") as r:
@@ -211,7 +256,7 @@ class BoxPrintTests(unittest.TestCase):
         j = self.wait(res["job"]["id"])
         self.assertEqual(j["state"], "done", j["log"])
         self.assertIn(b"inputs = object_1.stl", self.printer.uploads[0]["body"])
-        self.assertEqual(self.printer.gcode[-1], "SAVE_VARIABLE VARIABLE=value_t0 VALUE=\"'slot1'\"")
+        self.assertEqual(self.printer.gcode[-1], "SAVE_VARIABLE VARIABLE=enable_box VALUE=1\nSAVE_VARIABLE VARIABLE=value_t0 VALUE=\"'slot1'\"")
 
     def test_plain_stl_uses_filament_in_print_head(self):
         stl = helpers.write_ascii_stl(os.path.join(TMP, "cube.stl"))
@@ -221,7 +266,7 @@ class BoxPrintTests(unittest.TestCase):
         j = self.wait(res["job"]["id"])
         self.assertEqual(j["state"], "done", j["log"])
         self.assertIn(b"colours = #1353AB", self.printer.uploads[0]["body"])
-        self.assertEqual(self.printer.gcode[-1], "SAVE_VARIABLE VARIABLE=value_t0 VALUE=\"'slot3'\"")
+        self.assertEqual(self.printer.gcode[-1], "SAVE_VARIABLE VARIABLE=enable_box VALUE=1\nSAVE_VARIABLE VARIABLE=value_t0 VALUE=\"'slot3'\"")
 
     def test_no_slot_change_when_only_uploading(self):
         self.printer.state = "printing"

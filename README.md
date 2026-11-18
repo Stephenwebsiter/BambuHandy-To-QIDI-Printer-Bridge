@@ -62,6 +62,20 @@ Tip: on your phone use "Add to Home Screen" so the bridge opens like an app.
 The PC has to be on with the bridge window open while it prepares and sends the job. Once the printer has started,
 you can close it.
 
+## Changing the Box from your phone
+
+On the **Printer** tab, tap a Box slot. You can:
+
+- set the **filament and colour** in that slot (the same choices as the printer's screen), then tap
+  **Save to printer** twice,
+- **Load into print head** or **Unload** that slot (not while printing),
+- **Read the spool's RFID tag** for QIDI spools.
+
+Every button needs a second tap to confirm. The bridge uses the same commands as QIDI Studio
+(`UPDATE_FILAMENT_INFORMATION`, `LOAD_FILAMENT_CONTROL`, `UNLOAD_FILAMENT_CONTROL`, `READ_RFID`).
+The Q2 switches the Box on or off for each print it starts; the bridge switches it on for every print that uses
+Box slots. Drying is not on the page yet; start it on the printer's screen.
+
 ## Filament library
 
 The **Filaments** tab lists every filament your printer has tested settings for (QIDI, Generic, Polymaker,

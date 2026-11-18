@@ -178,9 +178,6 @@ def _read_box(job: Job, cfg: dict) -> dict | None:
         return None
     if not b.get("present"):
         return None
-    if not b.get("enabled", True):
-        job.log("The QIDI Box is switched off on the printer, so it is not used.")
-        return None
     if not any(s.get("loaded") for s in b["slots"]):
         job.log("The QIDI Box has no filament loaded, so it is not used.")
         return None
@@ -330,7 +327,9 @@ def send_to_printer(job: Job, cfg: dict, gcode_path: str, mapping: list[int] | N
             script = qbox.tool_slot_script(mapping)
             if script:
                 job.log("Box slots: " + ", ".join(f"T{t} -> slot {m + 1}" for t, m in enumerate(mapping) if m >= 0))
-                mr.gcode(script)
+                # The printer's screen switches the Box on for each print it starts; do the same,
+                # otherwise the print runs with whatever the last print left (often "off").
+                mr.gcode(qbox.ENABLE_BOX + "\n" + script)
         mr.upload(gcode_path, job.remote_name, start_print=job.start)
     except MoonrakerError as e:
         raise RuntimeError(str(e)) from e

@@ -227,6 +227,78 @@ def read_box(mr: Moonraker) -> dict:
     return {"present": True, "boxes": box_count, "slots": slots, "enabled": enabled, "climate": climate}
 
 
+ENABLE_BOX = "SAVE_VARIABLE VARIABLE=enable_box VALUE=1"
+
+# Box commands, exactly as QIDI Studio sends them (PrinterTaskDispatcher.cpp).
+_SAFE_TEXT = re.compile(r"^[A-Za-z0-9 +\-./()_]{1,40}$")
+
+
+class BoxCommandError(ValueError):
+    pass
+
+
+def _slot_arg(slot) -> int:
+    try:
+        n = int(slot)
+    except (TypeError, ValueError):
+        raise BoxCommandError("Pick a slot first.") from None
+    if not 0 <= n < 16:
+        raise BoxCommandError("That slot doesn't exist.")
+    return n
+
+
+def set_slot_script(slot, color: str, vendor: str, filament: str) -> str:
+    """Tell the printer what is in a slot: colour 'RRGGBB', vendor 'QIDI', filament 'PLA Basic'."""
+    n = _slot_arg(slot)
+    c = str(color or "").strip().lstrip("#").upper()
+    if not re.fullmatch(r"[0-9A-F]{6}", c):
+        raise BoxCommandError("Pick a colour.")
+    vendor = str(vendor or "").strip()
+    filament = str(filament or "").strip()
+    if not _SAFE_TEXT.match(vendor) or not _SAFE_TEXT.match(filament):
+        raise BoxCommandError("Pick a filament from the list.")
+    return f"UPDATE_FILAMENT_INFORMATION SLOT={n} COLOR='{c}' VENDOR='{vendor}' FILAMENT='{filament}'"
+
+
+def slot_action_script(action: str, slot) -> str:
+    n = _slot_arg(slot)
+    cmd = {"load": "LOAD_FILAMENT_CONTROL", "unload": "UNLOAD_FILAMENT_CONTROL",
+           "rfid": "READ_RFID"}.get(action)
+    if not cmd:
+        raise BoxCommandError("Unknown Box action.")
+    return f"{cmd} SLOT={n}"
+
+
+def filament_options(d: dict, slots: list[dict]) -> dict:
+    """What the printer's own screen offers: {'QIDI': ['PLA Basic', ...], 'Generic': ['PLA', 'ABS', ...]}."""
+    names = [f.get("filament", "") for _k, f in sorted(d.get("filaments", {}).items()) if f.get("filament")]
+    types = sorted({normalize_type(f.get("type") or f.get("filament", "")) for f in d.get("filaments", {}).values()
+                    if f.get("filament")} | {n for n in names if " " not in n})
+    vendors = [v for _k, v in sorted(d.get("vendors", {}).items())] or ["Generic", "QIDI"]
+    out = {}
+    for v in vendors:
+        out[v] = sorted(set(types)) if v.lower() == "generic" else sorted(set(names), key=str.lower)
+    for s in slots:
+        if s.get("loaded") and s.get("vendor") and s.get("name"):
+            lst = out.setdefault(s["vendor"], [])
+            if s["name"] not in lst:
+                lst.append(s["name"])
+    return out
+
+
+def split_vendor(preset_short: str, vendors=("QIDI", "Generic", "Bambu", "HATCHBOX", "Overture", "Polymaker",
+                                              "PolyLite", "eSUN", "Elegoo", "Sunlu")) -> tuple[str, str]:
+    """'QIDI PLA Basic' -> ('QIDI', 'PLA Basic'), the way the printer's filament list names them."""
+    s = preset_short.strip()
+    for v in vendors:
+        if s.lower().startswith(v.lower() + " "):
+            if v == "PolyLite":
+                return "Polymaker", s
+            return v, s[len(v) + 1:].strip()
+    head, _, rest = s.partition(" ")
+    return head, rest or s
+
+
 def tool_slot_script(mapping: list[int]) -> str:
     """G-code telling the Box which slot each tool (filament) uses: T0 -> mapping[0], ..."""
     lines = []

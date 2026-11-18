@@ -218,6 +218,8 @@ class Handler(BaseHTTPRequestHandler):
             if (self.headers.get("Content-Type") or "").startswith("application/json"):
                 return self._start_job(cfg, self._body_json())
             return self._upload(cfg)
+        if path.startswith("/api/box/"):
+            return self._box_action(cfg, path.rsplit("/", 1)[1], self._body_json())
         if path.startswith("/api/printer/"):
             action = path.rsplit("/", 1)[1]
             if action not in ("pause", "resume", "cancel"):
@@ -367,8 +369,10 @@ class Handler(BaseHTTPRequestHandler):
                 ftype = (ftype[0] if isinstance(ftype, list) and ftype else ftype) or "PLA"
                 vendor = d.get("filament_vendor")
                 vendor = (vendor[0] if isinstance(vendor, list) and vendor else vendor) or name.split(" ")[0]
+                short = name.split("@")[0].strip()
+                bv, bn = qbox.split_vendor(short)
                 out.append({
-                    "name": name, "short": name.split("@")[0].strip(), "type": str(ftype),
+                    "name": name, "short": short, "type": str(ftype), "box_vendor": bv, "box_name": bn,
                     "family": qbox.normalize_type(str(ftype)), "vendor": str(vendor),
                     "nozzle": int(slicer._num(d.get("nozzle_temperature"), 0)),
                     "nozzle_low": int(slicer._num(d.get("nozzle_temperature_range_low"), 0)),
@@ -386,6 +390,42 @@ class Handler(BaseHTTPRequestHandler):
                 "plate_label": slicer.PLATE_LABELS.get(plate, plate), "default": cfg.get("filament_preset"),
                 "printer": printer_name(cfg)}
 
+    def _box_action(self, cfg: dict, action: str, data: dict):
+        """Change the Box from the phone, with the same commands QIDI Studio sends."""
+        try:
+            mr = Moonraker(cfg["printer_host"], cfg["printer_port"], cfg.get("printer_api_key", ""), timeout=10)
+            if action == "set":
+                script = qbox.set_slot_script(data.get("slot"), data.get("color"), data.get("vendor"), data.get("filament"))
+            elif action in ("load", "unload", "rfid"):
+                script = qbox.slot_action_script(action, data.get("slot"))
+            else:
+                return self._error("Not found", 404)
+            if action in ("load", "unload", "rfid"):
+                state = mr.status().get("print_stats", {}).get("state")
+                if state in ("printing", "paused"):
+                    return self._json({"ok": False, "error": "The printer is busy printing. Try again when it has finished."})
+            write_log(f"box action {action}: {script}")
+            mr.gcode(script)
+        except qbox.BoxCommandError as e:
+            return self._json({"ok": False, "error": str(e)})
+        except MoonrakerError as e:
+            return self._json({"ok": False, "error": str(e)})
+        result = {"ok": True, "sent": script}
+        if action == "set":
+            # The printer quietly ignores a filament it doesn't know, so check that the slot changed.
+            import time as _t
+            for _ in range(6):
+                _t.sleep(0.5)
+                b = self._box(cfg)
+                slot = next((s for s in b.get("slots", []) if s["index"] == int(data["slot"])), None)
+                if slot and str(data.get("filament", "")).lower() == str(slot.get("name", "")).lower() and \
+                        str(data.get("vendor", "")).lower() == str(slot.get("vendor", "")).lower():
+                    result["box"] = b
+                    return self._json(result)
+            result.update(ok=False, box=b, error="The printer didn't accept that filament. Pick another one, "
+                                                 "or set this slot on the printer's screen.")
+        return self._json(result)
+
     def _box(self, cfg: dict) -> dict:
         try:
             mr = Moonraker(cfg["printer_host"], cfg["printer_port"], cfg.get("printer_api_key", ""), timeout=5)
@@ -394,6 +434,12 @@ class Handler(BaseHTTPRequestHandler):
             return {"ok": False, "error": str(e), "present": False, "slots": []}
         b["ok"] = True
         b["use_box"] = bool(cfg.get("use_box", True))
+        try:
+            fd = qbox.filament_dict(mr)
+            b["palette"] = [c for _k, c in sorted(fd["colors"].items())]
+            b["options"] = qbox.filament_options(fd, b.get("slots", []))
+        except Exception:
+            b["palette"], b["options"] = [], {}
         if b.get("present"):
             try:
                 lib = slicer.library(slicer.resolve_slicer(cfg), machine=cfg.get("machine_preset"))

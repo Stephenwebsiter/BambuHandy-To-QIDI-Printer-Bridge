@@ -80,6 +80,12 @@ ol { padding-left: 20px; margin: 6px 0 0; } ol li { margin: 4px 0; font-size: 14
 .slot .sw { display: block; margin: 0 auto 6px; }
 .slot .n { font-weight: 600; font-size: 12px; color: var(--muted); }
 .slot .t { overflow-wrap: anywhere; line-height: 1.25; }
+.slot { cursor: pointer; }
+.slot.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+.palette { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.palette button { width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(127,127,127,.5); padding: 0; }
+.palette button.on { box-shadow: 0 0 0 3px var(--card), 0 0 0 5px var(--accent); }
+input[type=color] { width: 44px; height: 36px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 2px; }
 .slot.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .slot .head { font-size: 11px; color: var(--accent); font-weight: 600; }
 .cmap { border-top: 1px solid var(--line); padding: 12px 0 4px; }
@@ -251,7 +257,22 @@ nav button { padding: 10px 4px; }
     <div class="card hidden" id="boxCard">
       <h2>QIDI Box</h2>
       <div id="boxBody"></div>
-      <p class="hint">To change what's in a slot, load the filament and set its colour and type on the printer's screen. This page reads it from there.</p>
+      <p class="hint">Tap a slot to change its filament or colour, or to load or unload it. The bridge switches the Box on by itself for every print that uses it.</p>
+      <div id="slotEdit" class="hidden" style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
+        <h2 id="seTitle">Slot</h2>
+        <label for="seFil">Filament in this slot</label>
+        <select id="seFil"></select>
+        <label>Colour</label>
+        <div class="palette" id="sePalette"></div>
+        <div class="row" style="align-items:center;margin-top:8px"><div style="flex:none"><input type="color" id="seColor" value="#FFFFFF"></div><div class="hint" style="margin:0">Or pick any colour (the printer may round it to the nearest one it knows)</div></div>
+        <button class="btn" id="seSave">Save to printer</button>
+        <div class="row">
+          <div><button class="btn secondary small" id="seLoad">Load into print head</button></div>
+          <div><button class="btn secondary small" id="seUnload">Unload</button></div>
+        </div>
+        <button class="btn secondary small" id="seRfid">Read the spool's RFID tag</button>
+        <div id="seNote" class="notice hidden"></div>
+      </div>
     </div>
   </section>
 
@@ -611,7 +632,7 @@ $('plate').onchange = async () => {
   if (d.ok) showFile(d); else note($('fileNote'), d.error, 'bad');
 };
 
-function boxReady() { return !!(BOX && BOX.present && BOX.enabled !== false && BOX.use_box && BOX.slots.some(s => s.loaded)); }
+function boxReady() { return !!(BOX && BOX.present && BOX.use_box && BOX.slots.some(s => s.loaded)); }
 function suggest(f) {
   const loaded = BOX.slots.filter(s => s.loaded);
   if (!loaded.length) return -1;
@@ -635,8 +656,7 @@ function renderColours() {
     $('filamentRow').classList.toggle('hidden', !slicing);
     if (used.length > 1) {
       card.classList.remove('hidden'); $('optStep').textContent = '3';
-      const why = BOX && BOX.present && BOX.enabled === false ? 'The QIDI Box is switched off on the printer, so'
-        : BOX && BOX.present && !BOX.use_box ? 'The QIDI Box is switched off in Settings, so' : 'Without a QIDI Box';
+      const why = BOX && BOX.present && !BOX.use_box ? 'The QIDI Box is switched off in Settings, so' : 'Without a QIDI Box';
       body.innerHTML = `<div class="pick">${used.map(f => `<span title="${esc(f.type)}">${sw(f.color, 'big')}</span>`).join('')}</div>
         <p class="hint">This model has ${used.length} colours. ${why} it is printed in one colour.</p>`;
     } else { card.classList.add('hidden'); $('optStep').textContent = '2'; }
@@ -748,7 +768,7 @@ async function refreshBox() {
   const groups = [];
   for (let b = 1; b <= BOX.boxes; b++) groups.push(BOX.slots.filter(s => s.box === b));
   $('boxBody').innerHTML = groups.map(g => `<div class="slots" style="margin-bottom:8px">${g.map(s => `
-      <div class="slot ${s.active ? 'active' : ''}">
+      <div class="slot ${s.active ? 'active' : ''} ${s.index === EDIT_SLOT ? 'sel' : ''}" data-slot="${s.index}">
         ${sw(s.loaded ? s.color : '', 'big')}
         <div class="n">Slot ${esc(s.label)}</div>
         <div class="t">${s.loaded ? esc(s.name || s.type) : 'Empty'}</div>
@@ -756,8 +776,8 @@ async function refreshBox() {
         ${s.active ? '<div class="head">In print head</div>' : ''}
       </div>`).join('')}</div>`).join('') +
     (clim ? `<p class="hint">${clim}</p>` : '') +
-    (BOX.enabled === false ? `<p class="notice bad">The Box is switched off on the ${esc(printerName())}, so prints use only the filament in the print head. Turn the Box on in the printer's own settings screen to print in colour.</p>` : '') +
     (BOX.use_box ? '' : '<p class="notice">The Box is switched off for the bridge (Settings → Use my QIDI Box).</p>');
+  wireBoxTiles();
 }
 
 // --- filament library -------------------------------------------------------------------------------
@@ -819,6 +839,82 @@ function renderLibBox() {
 $('libSearch').oninput = () => LIB && renderLibrary();
 
 $('goPrinter').onclick = () => showTab('printer');
+
+// --- changing the Box ------------------------------------------------------------------------------
+let EDIT_SLOT = -1, EDIT_COLOR = '#FFFFFF';
+const DEFAULT_PALETTE = ['#FFFFFF', '#000000', '#FF362D', '#F68A1B', '#FCE300', '#61C680', '#1353AB', '#7A4FA0', '#F4A2C4', '#8E9089', '#A0622D', '#D8C9A3'];
+function armed(btn, label, run) {
+  // Tap once to arm, again within 4 s to do it: nothing changes on the printer by accident.
+  btn.onclick = () => {
+    if (!btn.dataset.armed) {
+      btn.dataset.armed = '1'; btn.dataset.label = btn.textContent; btn.textContent = label;
+      btn._t = setTimeout(() => { delete btn.dataset.armed; btn.textContent = btn.dataset.label; }, 4000);
+      return;
+    }
+    clearTimeout(btn._t); delete btn.dataset.armed; btn.textContent = btn.dataset.label;
+    run();
+  };
+}
+async function boxCall(action, body, noteEl, busy) {
+  note(noteEl, busy);
+  let d; try { d = await postJSON('/api/box/' + action, body); } catch (e) { return null; }
+  if (d.box) { BOX = Object.assign(BOX || {}, d.box); }
+  note(noteEl, d.ok ? '' : d.error, d.ok ? '' : 'bad');
+  setTimeout(refreshBox, 1500);
+  return d;
+}
+function wireBoxTiles() {
+  document.querySelectorAll('#boxBody .slot').forEach(t => t.onclick = () => openSlot(+t.dataset.slot));
+}
+async function openSlot(i) {
+  EDIT_SLOT = i;
+  const s = BOX.slots.find(x => x.index === i); if (!s) return;
+  document.querySelectorAll('#boxBody .slot').forEach(t => t.classList.toggle('sel', +t.dataset.slot === i));
+  $('slotEdit').classList.remove('hidden');
+  $('seTitle').textContent = `Slot ${s.label}` + (s.loaded ? ` · ${s.vendor || ''} ${s.name || s.type}` : ' · empty');
+  note($('seNote'), '');
+  const sel = $('seFil'); sel.innerHTML = '';
+  // The same choices the printer's own screen offers (from its filament list).
+  const groups = BOX.options || {};
+  const order = Object.keys(groups).sort((a, b) => (b === 'QIDI') - (a === 'QIDI') || (b === 'Generic') - (a === 'Generic') || a.localeCompare(b));
+  for (const v of order) {
+    const og = document.createElement('optgroup'); og.label = v;
+    for (const n of groups[v]) {
+      const o = document.createElement('option'); o.value = v + '|' + n; o.textContent = `${v} ${n}`;
+      if (s.loaded && (s.vendor || '').toLowerCase() === v.toLowerCase() && (s.name || '').toLowerCase() === n.toLowerCase()) o.selected = true;
+      og.appendChild(o);
+    }
+    sel.appendChild(og);
+  }
+  EDIT_COLOR = s.loaded && s.color ? s.color.toUpperCase() : '#FFFFFF';
+  renderPalette();
+  $('slotEdit').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function renderPalette() {
+  const pal = [...new Set([...(BOX && BOX.palette && BOX.palette.length ? BOX.palette : DEFAULT_PALETTE).map(c => c.toUpperCase()), EDIT_COLOR])];
+  $('sePalette').innerHTML = pal.map(c => `<button style="background:${esc(c)}" data-c="${esc(c)}" class="${c === EDIT_COLOR ? 'on' : ''}" aria-label="${esc(c)}"></button>`).join('');
+  $('sePalette').querySelectorAll('button').forEach(b => b.onclick = () => { EDIT_COLOR = b.dataset.c; $('seColor').value = EDIT_COLOR.toLowerCase(); renderPalette(); });
+  $('seColor').value = EDIT_COLOR.toLowerCase();
+}
+$('seColor').oninput = () => { EDIT_COLOR = $('seColor').value.toUpperCase(); renderPalette(); };
+armed($('seSave'), 'Tap again to save', async () => {
+  const [vendor, filament] = ($('seFil').value || '|').split('|');
+  const d = await boxCall('set', { slot: EDIT_SLOT, color: EDIT_COLOR, vendor, filament }, $('seNote'), 'Saving to the printer…');
+  if (d && d.ok) { note($('seNote'), 'Saved. The printer now shows this slot as ' + vendor + ' ' + filament + '.', 'ok'); refreshBox(); }
+});
+armed($('seLoad'), 'Tap again to load', async () => {
+  const d = await boxCall('load', { slot: EDIT_SLOT }, $('seNote'), 'Loading… the printer heats up and feeds the filament (about a minute).');
+  if (d && d.ok) note($('seNote'), 'Loading started. Watch the printer.', 'ok');
+});
+armed($('seUnload'), 'Tap again to unload', async () => {
+  const d = await boxCall('unload', { slot: EDIT_SLOT }, $('seNote'), 'Unloading…');
+  if (d && d.ok) note($('seNote'), 'Unloading started. Watch the printer.', 'ok');
+});
+armed($('seRfid'), 'Tap again to read', async () => {
+  const d = await boxCall('rfid', { slot: EDIT_SLOT }, $('seNote'), 'Reading the tag (the spool turns a little)…');
+  if (d && d.ok) note($('seNote'), 'Reading. The slot updates in a few seconds if the spool has a QIDI tag.', 'ok');
+});
+
 
 const DONE = { pause: 'Pausing the print.', resume: 'Resuming the print.', cancel: 'Print cancelled.' };
 async function control(action, label) {
