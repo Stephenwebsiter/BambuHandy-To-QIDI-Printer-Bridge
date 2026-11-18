@@ -124,8 +124,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "state": self._state(new)})
         if path == "/api/test-printer":
             data = self._body_json()
-            host = data.get("printer_host", cfg["printer_host"])
-            port = data.get("printer_port", cfg["printer_port"])
+            host = (data.get("printer_host") or "").strip() or cfg["printer_host"]
+            port = data.get("printer_port") or cfg["printer_port"]
             try:
                 info = Moonraker(host, int(port or 7125), cfg.get("printer_api_key", ""), timeout=5).info()
                 return self._json({"ok": True, "info": info})
