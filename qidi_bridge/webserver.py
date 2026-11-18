@@ -318,7 +318,8 @@ class Handler(BaseHTTPRequestHandler):
                   trust_gcode=bool(data.get("trust_gcode")), process=str(data.get("process") or ""),
                   filament=str(data.get("filament") or ""), slots=slots, filaments=fils,
                   use_box=data.get("use_box") if isinstance(data.get("use_box"), bool) else None,
-                  scale=data.get("scale") or 1.0)
+                  scale=data.get("scale") or 1.0, copies=data.get("copies") or 1,
+                  tweaks=data.get("tweaks") if isinstance(data.get("tweaks"), dict) else None)
         shutil.copyfile(src, job.path)
         self.jobs.submit(job)
         return self._json({"ok": True, "job": job.to_dict()})

@@ -81,6 +81,9 @@ ol { padding-left: 20px; margin: 6px 0 0; } ol li { margin: 4px 0; font-size: 14
 .slot .n { font-weight: 600; font-size: 12px; color: var(--muted); }
 .slot .t { overflow-wrap: anywhere; line-height: 1.25; }
 .slot { cursor: pointer; }
+.stepper { display: flex; align-items: center; gap: 10px; }
+.stepper button { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 22px; }
+.stepper input { width: 70px; text-align: center; }
 .slot.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
 .palette { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .palette button { width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(127,127,127,.5); padding: 0; }
@@ -201,7 +204,7 @@ nav button { padding: 10px 4px; }
     <div class="card hidden" id="optCard">
       <h2><span class="step" id="optStep">3</span>Print</h2>
       <div id="qualityRow">
-        <label for="quality">Quality</label>
+        <label for="quality">Quality (layer height)</label>
         <select id="quality"></select>
       </div>
       <div id="sizeRow" class="hidden">
@@ -215,6 +218,33 @@ nav button { padding: 10px 4px; }
           <button data-s="50">50%</button><button data-s="100" class="on">100%</button><button data-s="150">150%</button><button data-s="200">200%</button><button data-s="300">300%</button>
         </div>
         <p class="hint" id="sizeText"></p>
+      </div>
+      <div id="tweakRow" class="hidden">
+        <label for="copies">Copies</label>
+        <div class="stepper">
+          <button type="button" id="copMinus" aria-label="Fewer copies">−</button>
+          <input id="copies" type="number" min="1" max="50" value="1" inputmode="numeric">
+          <button type="button" id="copPlus" aria-label="More copies">+</button>
+          <span class="hint" id="copHint" style="margin:0"></span>
+        </div>
+        <details id="moreSet" style="margin-top:12px">
+          <summary style="font-size:15px;color:var(--text)">More settings (strength, supports, brim)</summary>
+          <div class="row">
+            <div><label for="t_infill">Strength (infill)</label><select id="t_infill">
+              <option value="">Normal</option><option value="10">Light 10%</option><option value="25">Strong 25%</option>
+              <option value="40">Stronger 40%</option><option value="60">Very strong 60%</option><option value="100">Solid 100%</option></select></div>
+            <div><label for="t_walls">Walls</label><select id="t_walls">
+              <option value="">Normal</option><option value="2">2 (thin)</option><option value="3">3</option><option value="4">4 (strong)</option><option value="6">6 (very strong)</option></select></div>
+          </div>
+          <div class="row">
+            <div><label for="t_supports">Supports</label><select id="t_supports">
+              <option value="">As set up</option><option value="off">Off</option><option value="tree">On (tree, easy to remove)</option><option value="normal">On (normal)</option></select></div>
+            <div><label for="t_brim">Brim (helps sticking)</label><select id="t_brim">
+              <option value="">Automatic</option><option value="on">Always</option><option value="off">Off</option></select></div>
+          </div>
+          <div class="check"><input type="checkbox" id="t_bedOnly"><span>Supports only from the bed (not on the model)</span></div>
+          <p class="hint">Normal means the tested settings for the quality you picked.</p>
+        </details>
       </div>
       <div id="filamentRow" class="hidden">
         <label for="filament">Filament</label>
@@ -600,7 +630,8 @@ async function showFile(d) {
   // Quality and filament settings only matter when the bridge slices the model.
   $('qualityRow').classList.toggle('hidden', d.ready || d.kind === 'gcode');
   $('sizeRow').classList.toggle('hidden', !d.size);
-  setScale(100);
+  $('tweakRow').classList.toggle('hidden', d.ready || d.kind === 'gcode');
+  setScale(100); setCopies(1);
   await refreshBox();
   renderColours();
   $('optCard').classList.remove('hidden');
@@ -616,12 +647,26 @@ function setScale(v) {
   const fmt = (mm) => mm >= 100 ? (mm / 10).toFixed(1) + ' cm' : mm.toFixed(1) + ' mm';
   let t = `${fmt(sz[0])} wide × ${fmt(sz[1])} deep × ${fmt(sz[2])} tall` + (v !== 100 ? ` (original ${FILE.size.map(x => x.toFixed(0)).join(' × ')} mm)` : '');
   const bed = FILE.bed;
+  const copies = +$('copies').value || 1;
+  if (bed && copies > 1 && copies * (sz[0] + 5) * (sz[1] + 5) > bed[0] * bed[1] * 0.8) {
+    t += `. ${copies} copies at this size probably won't fit on the bed. Use fewer copies or make it smaller.`;
+    $('sizeText').className = 'hint notice bad'; $('sizeText').textContent = t; return;
+  }
   if (bed && (Math.min(sz[0], sz[1]) > Math.min(bed[0], bed[1]) || Math.max(sz[0], sz[1]) > Math.max(bed[0], bed[1]) || (bed[2] && sz[2] > bed[2]))) {
     t += `. Too big for your ${printerName()} (${bed.map(x => x.toFixed(0)).join(' × ')} mm). Make it smaller.`;
     $('sizeText').className = 'hint notice bad';
   } else $('sizeText').className = 'hint';
   $('sizeText').textContent = t;
 }
+function setCopies(n) {
+  n = Math.max(1, Math.min(50, Math.round(+n || 1)));
+  $('copies').value = n;
+  $('copHint').textContent = n > 1 ? `${n} copies, spread out on the bed` : '';
+  if (FILE && FILE.size) setScale($('scaleNum').value);
+}
+$('copMinus').onclick = () => setCopies(+$('copies').value - 1);
+$('copPlus').onclick = () => setCopies(+$('copies').value + 1);
+$('copies').onchange = () => setCopies($('copies').value);
 $('scale').oninput = () => setScale($('scale').value);
 $('scaleNum').onchange = () => setScale($('scaleNum').value);
 $('scaleChips').querySelectorAll('button').forEach(b => b.onclick = () => setScale(b.dataset.s));
@@ -699,6 +744,11 @@ $('sendBtn').onclick = async () => {
   const body = { file_id: FILE.file_id, plate: +$('plate').value || FILE.plate, start: $('startNow').checked,
                  trust_gcode: $('trustGcode').checked, process: $('quality').value };
   if (FILE.size) body.scale = (+$('scaleNum').value || 100) / 100;
+  if (!FILE.ready && FILE.kind !== 'gcode') {
+    body.copies = +$('copies').value || 1;
+    body.tweaks = { infill: $('t_infill').value, walls: $('t_walls').value, supports: $('t_supports').value,
+                    brim: $('t_brim').value, support_bed_only: $('t_bedOnly').checked };
+  }
   if (boxReady()) body.slots = FILE.filaments.map((f, i) => CHOICE[i] === undefined ? -1 : CHOICE[i]);
   else { body.use_box = false; body.filament = $('filament').value; }
   let d; try { d = await postJSON('/api/jobs', body); } catch (e) { $('sendBtn').disabled = false; return; }

@@ -228,6 +228,34 @@ class BoxPrintTests(unittest.TestCase):
         finally:
             self.printer.state = "standby"
 
+    def test_copies_and_settings(self):
+        stl = helpers.write_ascii_stl(os.path.join(TMP, "copy.stl"))
+        info = self.upload(stl)
+        before = open(self.slicer_log).read() if os.path.exists(self.slicer_log) else ""
+        res = self.post("/api/jobs", json.dumps({"file_id": info["file_id"], "copies": 3, "tweaks": {
+            "infill": "40", "walls": "4", "supports": "tree", "brim": "off", "bogus": "1"}}).encode(),
+            {"Content-Type": "application/json"})
+        j = self.wait(res["job"]["id"])
+        self.assertEqual(j["state"], "done", j["log"])
+        args = json.loads(open(self.slicer_log).read()[len(before):].strip().splitlines()[-1])
+        self.assertEqual(sum(1 for a in args if a.endswith("copy.stl")), 3)
+        proc = json.load(open(args[args.index("--load-settings") + 1].split(";")[1]))
+        self.assertEqual(proc["sparse_infill_density"], "40%")
+        self.assertEqual(proc["wall_loops"], "4")
+        self.assertEqual(proc["support_type"], "tree(auto)")
+        self.assertEqual(proc["brim_type"], "no_brim")
+        self.assertNotIn("bogus", proc)
+        p = helpers.make_bambu_project(os.path.join(TMP, "cp.3mf"), plates=2)
+        info = self.upload(p)
+        before = open(self.slicer_log).read()
+        res = self.post("/api/jobs", json.dumps({"file_id": info["file_id"], "plate": 2, "copies": 2}).encode(),
+                        {"Content-Type": "application/json"})
+        j = self.wait(res["job"]["id"])
+        self.assertEqual(j["state"], "done", j["log"])
+        args = json.loads(open(self.slicer_log).read()[len(before):].strip().splitlines()[-1])
+        self.assertEqual(args[args.index("--repetitions") + 1], "2")
+        self.assertEqual(args[args.index("--slice") + 1], "2")
+
     def test_filament_library(self):
         with urllib.request.urlopen(self.base + "/api/filaments") as r:
             d = json.loads(r.read())

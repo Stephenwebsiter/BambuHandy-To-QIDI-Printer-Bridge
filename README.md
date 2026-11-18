@@ -51,7 +51,9 @@ Tip: on your phone use "Add to Home Screen" so the bridge opens like an app.
    Tap another slot to change it. A plain .stl uses the filament that is in the print head now.
    Picking the same slot for every colour prints the model in one colour.
 5. Choose the quality (and the plate for projects with several plates). **Size** shows how big the model will
-   print; drag it or tap 150% / 200% to make it bigger. Then tap **Print**.
+   print; drag it or tap 150% / 200% to make it bigger. **Copies** prints several at once, spread out on the bed.
+   **More settings** changes strength (infill), walls, supports and brim; "Normal" keeps the tested settings.
+   Then tap **Print**.
    The bed plate (Settings → Bed plate) sets the bed temperature. **Extra bed grip** (on by default) slows the
    first layer down, keeps the fan off for the first 3 layers and warms the first layer a little, so prints stick.
 6. Watch progress under **Recent jobs**. The **Printer** tab shows temperatures, progress, and what is in each Box slot

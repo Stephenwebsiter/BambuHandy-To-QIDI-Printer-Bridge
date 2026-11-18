@@ -76,6 +76,41 @@ def filament_overrides(data: dict, plate: str, grip: bool) -> dict:
     return over
 
 
+# What the phone page may change, and the values it may use (anything else is ignored).
+TWEAKS = {
+    "infill": ("sparse_infill_density", {"10": "10%", "15": "15%", "25": "25%", "40": "40%", "60": "60%", "100": "100%"}),
+    "walls": ("wall_loops", {"2": "2", "3": "3", "4": "4", "6": "6"}),
+    "top": ("top_shell_layers", {"3": "3", "5": "5", "7": "7"}),
+}
+
+
+def tweak_overrides(tweaks: dict | None) -> dict:
+    """Turn the phone page's simple choices into slicer settings."""
+    out = {}
+    t = tweaks or {}
+    for key, (setting, allowed) in TWEAKS.items():
+        v = str(t.get(key, "")).strip()
+        if v in allowed:
+            out[setting] = allowed[v]
+    sup = str(t.get("supports", ""))
+    if sup == "off":
+        out["enable_support"] = "0"
+    elif sup in ("tree", "normal"):
+        out["enable_support"] = "1"
+        out["support_type"] = f"{sup}(auto)"
+        if t.get("support_bed_only"):
+            out["support_on_build_plate_only"] = "1"
+    brim = str(t.get("brim", ""))
+    if brim == "off":
+        out["brim_type"] = "no_brim"
+    elif brim == "auto":
+        out["brim_type"] = "auto_brim"
+    elif brim == "on":
+        out["brim_type"] = "outer_only"
+        out["brim_width"] = "5"
+    return out
+
+
 def normalize_family(data: dict) -> str:
     t = data.get("filament_type")
     if isinstance(t, list):
@@ -171,9 +206,19 @@ def _read_result(out_dir: str) -> str:
 
 
 def run_cli(exe: str, inputs: list[str], settings: list[str], filaments: list[str], out_dir: str,
-            plate: int, arrange: bool, log, timeout: int = 900, scale: float = 1.0) -> str:
+            plate: int, arrange: bool, log, timeout: int = 900, scale: float = 1.0, copies: int = 1) -> str:
     os.makedirs(out_dir, exist_ok=True)
     scaled = abs((scale or 1.0) - 1.0) > 1e-6
+    copies = max(1, min(50, int(copies or 1)))
+    repeat = []
+    if copies > 1:
+        arrange = True
+        if plate > 0:
+            # A project plate: the slicer copies the whole plate and spreads the copies out.
+            repeat = ["--repetitions", str(copies)]
+        else:
+            # Plain shapes: hand the slicer the same files several times.
+            inputs = list(inputs) * copies
     if scaled:
         # A resized model may no longer fit where it was, so let the slicer place it again.
         arrange = True
@@ -186,6 +231,7 @@ def run_cli(exe: str, inputs: list[str], settings: list[str], filaments: list[st
            "--orient", "0",
            # --scale grows the model around its middle; --ensure-on-bed puts it back on the plate.
            *(["--scale", f"{scale:g}", "--ensure-on-bed"] if scaled else []),
+           *repeat,
            "--allow-newer-file",
            "--outputdir", out_dir,
            # Relative on purpose: the slicer puts it inside --outputdir itself.
@@ -230,6 +276,8 @@ class Plan:
         self.plate = plate if plate in PLATES else DEFAULT_PLATE
         self.grip = grip
         self.scale = 1.0
+        self.copies = 1
+        self.extra: dict = {}
 
 
 def make_plan(cfg: dict, process: str | None = None, filament: str | None = None,
@@ -260,6 +308,9 @@ def _write_presets(lib, plan: Plan, work_dir: str, log, count: int):
     try:
         m_file = lib.write_resolved("machine", plan.machine, preset_dir)
         p_over = process_overrides(lib.resolve("process", plan.process), plan.plate, plan.grip)
+        if plan.extra:
+            p_over.update(plan.extra)
+            log("Your changes: " + ", ".join(f"{k}={v}" for k, v in plan.extra.items()))
         p_file = lib.write_resolved("process", plan.process, preset_dir, p_over)
         f_files = []
         for i in range(count):
@@ -288,7 +339,7 @@ def slice_files_for_q2(cfg: dict, files: list[str], work_dir: str, log,
     lib = library(exe, log=log, machine=plan.machine)
     log(f"Slicer: {exe}")
     m_file, p_file, f_files = _write_presets(lib, plan, work_dir, log, 1)
-    return run_cli(exe, files, [m_file, p_file], f_files, os.path.join(work_dir, "out"), 0, True, log, scale=plan.scale)
+    return run_cli(exe, files, [m_file, p_file], f_files, os.path.join(work_dir, "out"), 0, True, log, scale=plan.scale, copies=plan.copies)
 
 
 def slice_for_q2(cfg: dict, src: str, plate: int, work_dir: str, log,
@@ -313,16 +364,16 @@ def slice_for_q2(cfg: dict, src: str, plate: int, work_dir: str, log,
             log(f"This project uses {colours} colours. Without a QIDI Box it will be printed in one colour.")
             m_file, p_file, f_files = _write_presets(lib, plan, work_dir, log, 1)
             meshes = threemf.export_plate_meshes(src, plate, os.path.join(work_dir, "meshes"))
-            return run_cli(exe, meshes, [m_file, p_file], f_files, os.path.join(work_dir, "out"), 0, True, log, scale=plan.scale)
+            return run_cli(exe, meshes, [m_file, p_file], f_files, os.path.join(work_dir, "out"), 0, True, log, scale=plan.scale, copies=plan.copies)
         m_file, p_file, f_files = _write_presets(lib, plan, work_dir, log, colours)
         try:
-            return run_cli(exe, [src], [m_file, p_file], f_files, os.path.join(work_dir, "out"), plate, False, log, scale=plan.scale)
+            return run_cli(exe, [src], [m_file, p_file], f_files, os.path.join(work_dir, "out"), plate, False, log, scale=plan.scale, copies=plan.copies)
         except SliceError as first:
             if colours > 1:
                 raise SliceError(f"{first} Multi-colour projects can't fall back to a one-colour slice "
                                  "automatically. Pick the same Box slot for every colour to print it in one colour.")
             log(f"Slicing the project file directly did not work ({first}). Trying again with just the shapes.")
             meshes = threemf.export_plate_meshes(src, plate, os.path.join(work_dir, "meshes"))
-            return run_cli(exe, meshes, [m_file, p_file], f_files[:1], os.path.join(work_dir, "out2"), 0, True, log, scale=plan.scale)
+            return run_cli(exe, meshes, [m_file, p_file], f_files[:1], os.path.join(work_dir, "out2"), 0, True, log, scale=plan.scale, copies=plan.copies)
     m_file, p_file, f_files = _write_presets(lib, plan, work_dir, log, 1)
-    return run_cli(exe, [src], [m_file, p_file], f_files, os.path.join(work_dir, "out"), 0, True, log, scale=plan.scale)
+    return run_cli(exe, [src], [m_file, p_file], f_files, os.path.join(work_dir, "out"), 0, True, log, scale=plan.scale, copies=plan.copies)
