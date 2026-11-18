@@ -186,6 +186,17 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn("QIDI PLA Rapido @Qidi Q2 0.4 nozzle", p["filament"])
 
 
+    def test_pause_resume_cancel(self):
+        for action in ("pause", "resume", "cancel"):
+            req = urllib.request.Request(self.base + "/api/printer/" + action, data=b"", method="POST")
+            with urllib.request.urlopen(req) as r:
+                self.assertTrue(json.loads(r.read())["ok"])
+        self.assertEqual(self.printer.actions[-3:], ["pause", "resume", "cancel"])
+        req = urllib.request.Request(self.base + "/api/printer/home", data=b"", method="POST")
+        with self.assertRaises(urllib.error.HTTPError):
+            urllib.request.urlopen(req)
+
+
 class MoonrakerAddressTests(unittest.TestCase):
     def test_address_forms(self):
         self.assertEqual(Moonraker("192.168.1.5").base, "http://192.168.1.5:7125")

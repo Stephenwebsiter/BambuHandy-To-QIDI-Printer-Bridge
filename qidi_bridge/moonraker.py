@@ -110,3 +110,9 @@ class Moonraker:
     def start_print(self, remote_name: str) -> dict:
         q = urllib.parse.urlencode({"filename": remote_name})
         return self._request("POST", f"/printer/print/start?{q}")
+
+    def control(self, action: str) -> dict:
+        """Pause, resume or cancel the current print."""
+        if action not in ("pause", "resume", "cancel"):
+            raise MoonrakerError(f"Unknown printer action: {action}")
+        return self._request("POST", f"/printer/print/{action}")

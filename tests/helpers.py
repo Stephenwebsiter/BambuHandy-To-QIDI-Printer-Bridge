@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 class FakeMoonraker:
     def __init__(self, state="standby"):
         self.uploads = []
+        self.actions = []
         self.state = state
         outer = self
 
@@ -40,6 +41,9 @@ class FakeMoonraker:
                 if self.path.startswith("/server/files/upload"):
                     outer.uploads.append({"ctype": self.headers["Content-Type"], "body": body})
                     return self._json({"item": {"path": "x.gcode", "root": "gcodes"}, "print_started": True})
+                if self.path.startswith("/printer/print/"):
+                    outer.actions.append(self.path.rsplit("/", 1)[1])
+                    return self._json({"result": "ok"})
                 self.send_error(404)
 
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)

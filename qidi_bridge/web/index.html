@@ -40,6 +40,7 @@ input[type=text], input[type=number], input[type=password], select {
        border-radius: 12px; border: 0; background: var(--accent); color: var(--accent-text); }
 .btn.secondary { background: var(--chip); color: var(--text); font-weight: 500; }
 .btn:disabled { opacity: .5; }
+.btn.danger { background: var(--bad); color: #fff; }
 .drop { display: block; border: 2px dashed var(--line); border-radius: 12px; padding: 22px 12px; text-align: center; color: var(--muted); cursor: pointer; }
 .drop strong { color: var(--text); display: block; font-size: 17px; margin-bottom: 4px; word-break: break-all; }
 .drop input { display: none; }
@@ -109,6 +110,11 @@ ol { padding-left: 20px; margin: 6px 0 0; } ol li { margin: 4px 0; font-size: 14
       <button class="btn" id="sendBtn" disabled>Print on Q2</button>
       <div id="sendNote" class="notice hidden"></div>
     </div>
+    <div class="card hidden" id="nowPrinting">
+      <h2>Printing now</h2>
+      <p class="hint" id="nowText"></p>
+      <button class="btn secondary" id="goPrinter">Pause or cancel</button>
+    </div>
     <div class="card">
       <h2>Recent jobs</h2>
       <div id="jobs"><p class="hint">Nothing sent yet.</p></div>
@@ -129,6 +135,13 @@ ol { padding-left: 20px; margin: 6px 0 0; } ol li { margin: 4px 0; font-size: 14
     <div class="card">
       <h2>Printer status</h2>
       <div id="pstatus"><p class="hint">Loading…</p></div>
+      <div id="controls" class="hidden">
+        <div class="row">
+          <div><button class="btn secondary" id="pauseBtn">Pause</button></div>
+          <div><button class="btn danger" id="cancelBtn">Cancel print</button></div>
+        </div>
+        <div id="ctrlNote" class="notice hidden"></div>
+      </div>
     </div>
   </section>
 
@@ -313,6 +326,7 @@ async function refreshPrinter() {
   let d; try { d = await api('/api/printer'); } catch (e) { return; }
   const pill = $('printerPill');
   if (!d.ok) {
+    $('controls').classList.add('hidden'); $('nowPrinting').classList.add('hidden');
     pill.textContent = 'Printer offline';
     $('pstatus').innerHTML = `<p class="notice bad">${esc(d.error)}</p>`;
     return;
@@ -322,6 +336,12 @@ async function refreshPrinter() {
   pill.textContent = 'Q2: ' + state;
   const pct = Math.round((ds.progress || (s.virtual_sdcard || {}).progress || 0) * 100);
   const ex = s.extruder || {}, bed = s.heater_bed || {};
+  const active = state === 'printing' || state === 'paused';
+  $('controls').classList.toggle('hidden', !active);
+  $('nowPrinting').classList.toggle('hidden', !active);
+  $('nowText').textContent = active ? `${ps.filename || 'Print'}: ${pct}%${state === 'paused' ? ' (paused)' : ''}` : '';
+  $('pauseBtn').textContent = state === 'paused' ? 'Resume' : 'Pause';
+  $('pauseBtn').dataset.action = state === 'paused' ? 'resume' : 'pause';
   const left = pct > 0 && ps.print_duration ? ps.print_duration * (100 - pct) / pct : 0;
   $('pstatus').innerHTML = `
     ${state === 'printing' || state === 'paused' ? `<div class="bar"><span style="width:${pct}%"></span></div><p class="hint">${pct}% · about ${fmtTime(left)} left</p>` : ''}
@@ -330,6 +350,27 @@ async function refreshPrinter() {
     <div class="stat"><span>Nozzle</span><b>${Math.round(ex.temperature || 0)}° / ${Math.round(ex.target || 0)}°</b></div>
     <div class="stat"><span>Bed</span><b>${Math.round(bed.temperature || 0)}° / ${Math.round(bed.target || 0)}°</b></div>`;
 }
+
+$('goPrinter').onclick = () => document.querySelector('nav button[data-tab=printer]').click();
+
+const DONE = { pause: 'Pausing the print.', resume: 'Resuming the print.', cancel: 'Print cancelled.' };
+async function control(action, label) {
+  note($('ctrlNote'), label + '…');
+  let d; try { d = await api('/api/printer/' + action, { method: 'POST' }); } catch (e) { return; }
+  note($('ctrlNote'), d.ok ? DONE[action] : d.error, d.ok ? 'ok' : 'bad');
+  setTimeout(refreshPrinter, 1500);
+}
+$('pauseBtn').onclick = () => control($('pauseBtn').dataset.action || 'pause', $('pauseBtn').textContent === 'Resume' ? 'Resuming' : 'Pausing');
+let cancelArmed = null;
+$('cancelBtn').onclick = () => {
+  if (!cancelArmed) {
+    $('cancelBtn').textContent = 'Tap again to cancel';
+    cancelArmed = setTimeout(() => { cancelArmed = null; $('cancelBtn').textContent = 'Cancel print'; }, 4000);
+    return;
+  }
+  clearTimeout(cancelArmed); cancelArmed = null; $('cancelBtn').textContent = 'Cancel print';
+  control('cancel', 'Cancelling');
+};
 
 $('testBtn').onclick = async () => {
   note($('testNote'), 'Testing…');

@@ -45,6 +45,8 @@ Tip: on your phone use "Add to Home Screen" so the bridge opens like an app.
 3. Open the bridge page, tap **Tap to choose a file**, pick the download.
 4. Choose quality, plate number (for projects with several plates) and filament, then tap **Print on Q2**.
 5. Watch progress under **Recent jobs**. The **Printer** tab shows temperatures and progress.
+6. To stop a print, open the **Printer** tab and tap **Pause** (then **Resume**), or **Cancel print** and tap it
+   again to confirm. You can also cancel from the Q2's own screen.
 
 The PC has to be on with the bridge window open while it prepares and sends the job. Once the Q2 has started,
 you can close it.

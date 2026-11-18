@@ -133,6 +133,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": str(e)})
         if path == "/api/jobs":
             return self._upload(cfg)
+        if path.startswith("/api/printer/"):
+            action = path.rsplit("/", 1)[1]
+            if action not in ("pause", "resume", "cancel"):
+                return self._error("Not found", 404)
+            try:
+                Moonraker(cfg["printer_host"], cfg["printer_port"], cfg.get("printer_api_key", "")).control(action)
+                return self._json({"ok": True})
+            except MoonrakerError as e:
+                return self._json({"ok": False, "error": str(e)})
         return self._error("Not found", 404)
 
     def _upload(self, cfg: dict):
