@@ -76,10 +76,18 @@ with zipfile.ZipFile(out, "w") as z:
 
 def make_fake_slicer(folder):
     os.makedirs(folder, exist_ok=True)
-    exe = os.path.join(folder, "orca-slicer")
-    with open(exe, "w") as fh:
+    script = os.path.join(folder, "fake_slicer.py")
+    with open(script, "w") as fh:
         fh.write(FAKE_SLICER.replace("{python}", sys.executable))
-    os.chmod(exe, os.stat(exe).st_mode | stat.S_IEXEC)
+    if sys.platform.startswith("win"):
+        # Windows can't run "#!" scripts, so wrap it in a .cmd file the bridge can start.
+        exe = os.path.join(folder, "orca-slicer.cmd")
+        with open(exe, "w") as fh:
+            fh.write(f'@"{sys.executable}" "{script}" %*\r\n')
+    else:
+        exe = os.path.join(folder, "orca-slicer")
+        os.replace(script, exe)
+        os.chmod(exe, os.stat(exe).st_mode | stat.S_IEXEC)
     prof = os.path.join(folder, "resources", "profiles", "Qidi")
     for sub in ("machine", "process", "filament"):
         os.makedirs(os.path.join(prof, sub), exist_ok=True)

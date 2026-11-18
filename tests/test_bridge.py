@@ -195,3 +195,53 @@ class MoonrakerAddressTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProfileDownloadTests(unittest.TestCase):
+    """OrcaSlicer builds that pack their presets (.opc) make the bridge download them instead."""
+
+    def test_downloads_q2_presets_when_slicer_has_none(self):
+        import functools
+        import shutil
+        import threading
+        from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+        from qidi_bridge import profile_fetch
+
+        # A pretend copy of OrcaSlicer's online profile folder, served over HTTP.
+        site = os.path.join(TMP, "site")
+        src = helpers.make_fake_slicer(os.path.join(TMP, "site-src"))
+        shutil.copytree(os.path.join(os.path.dirname(src), "resources", "profiles", "Qidi"),
+                        os.path.join(site, "Qidi"), dirs_exist_ok=True)
+        index = {"version": "1", "machine_model_list": [], "machine_list": [], "process_list": [], "filament_list": []}
+        for dirpath, _d, files in os.walk(os.path.join(site, "Qidi")):
+            for fn in files:
+                rel = os.path.relpath(os.path.join(dirpath, fn), os.path.join(site, "Qidi")).replace(os.sep, "/")
+                data = json.load(open(os.path.join(dirpath, fn)))
+                index[data["type"] + "_list"].append({"name": data["name"], "sub_path": rel})
+        with open(os.path.join(site, "Qidi.json"), "w") as fh:
+            json.dump(index, fh)
+        handler = functools.partial(SimpleHTTPRequestHandler, directory=site)
+        handler.log_message = lambda *a: None
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+        # A slicer install whose Qidi folder has no readable presets.
+        bare = os.path.join(TMP, "bare-slicer")
+        exe = helpers.make_fake_slicer(bare)
+        shutil.rmtree(os.path.join(bare, "resources", "profiles", "Qidi"))
+        os.makedirs(os.path.join(bare, "resources", "profiles", "Qidi"))
+
+        old = profile_fetch.BASE_URL
+        profile_fetch.BASE_URL = f"http://127.0.0.1:{httpd.server_address[1]}"
+        shutil.rmtree(profile_fetch.CACHE_ROOT, ignore_errors=True)
+        try:
+            lib = slicer.library(exe, refresh=True, log=lambda *_: None)
+            self.assertIn("Qidi Q2 0.4 nozzle", lib.names("machine"))
+            self.assertEqual(lib.resolve("machine", "Qidi Q2 0.4 nozzle")["printable_area"][2], "270x270")
+            self.assertIn("QIDI PLA Rapido @Qidi Q2 0.4 nozzle", lib.names("filament", "Qidi Q2 0.4 nozzle"))
+            self.assertTrue(profile_fetch.have_cache())
+        finally:
+            profile_fetch.BASE_URL = old
+            httpd.shutdown()
+            shutil.rmtree(profile_fetch.CACHE_ROOT, ignore_errors=True)
+            slicer._LIB_CACHE.clear()

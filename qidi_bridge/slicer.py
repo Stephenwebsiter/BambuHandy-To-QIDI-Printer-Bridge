@@ -8,7 +8,7 @@ import os
 import subprocess
 import sys
 
-from . import profiles, threemf
+from . import profile_fetch, profiles, threemf
 
 
 class SliceError(Exception):
@@ -18,10 +18,25 @@ class SliceError(Exception):
 _LIB_CACHE: dict[str, profiles.PresetLibrary] = {}
 
 
-def library(slicer_exe: str, refresh: bool = False) -> profiles.PresetLibrary:
+def library(slicer_exe: str, refresh: bool = False, log=None) -> profiles.PresetLibrary:
+    """Presets for the Q2: from the slicer's own folders, or downloaded if the slicer keeps them packed."""
     key = os.path.abspath(slicer_exe) if slicer_exe else ""
     if refresh or key not in _LIB_CACHE:
-        _LIB_CACHE[key] = profiles.PresetLibrary(profiles.profile_roots_for(slicer_exe))
+        roots = profiles.profile_roots_for(slicer_exe)
+        if profile_fetch.have_cache():
+            roots.append((profile_fetch.CACHE_ROOT, False))
+        lib = profiles.PresetLibrary(roots)
+        if not any("q2" in n.lower() for n in lib.names("machine")):
+            try:
+                profile_fetch.fetch_q2_profiles(log or print)
+            except OSError as e:
+                raise SliceError(
+                    "This slicer's QIDI Q2 settings can't be read, and downloading them failed "
+                    f"({e}). Check the PC's internet connection and try again."
+                ) from e
+            roots = profiles.profile_roots_for(slicer_exe) + [(profile_fetch.CACHE_ROOT, False)]
+            lib = profiles.PresetLibrary(roots)
+        _LIB_CACHE[key] = lib
     return _LIB_CACHE[key]
 
 
@@ -113,7 +128,7 @@ def slice_for_q2(cfg: dict, src: str, plate: int, work_dir: str, log,
                  process: str | None = None, filament: str | None = None) -> str:
     """Slice `src` with QIDI Q2 settings and return the path of the resulting G-code."""
     exe = resolve_slicer(cfg)
-    lib = library(exe)
+    lib = library(exe, log=log)
     machine = cfg.get("machine_preset") or "Qidi Q2 0.4 nozzle"
     process = process or cfg.get("process_preset")
     filament = filament or cfg.get("filament_preset")

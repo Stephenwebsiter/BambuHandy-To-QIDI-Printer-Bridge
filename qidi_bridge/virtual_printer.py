@@ -216,7 +216,7 @@ class VirtualPrinter:
         listen.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             listen.bind(("0.0.0.0", self.ports["ssdp"]))
-            listen.setblocking(False)
+            listen.settimeout(1.0)
         except OSError:
             # Bambu Studio on this same PC may already hold the port; announcing still works.
             listen.close()
@@ -232,19 +232,23 @@ class VirtualPrinter:
                     pass
             self.loop.call_later(5, announce)
 
-        def on_search():
-            try:
-                data, addr = listen.recvfrom(4096)
-            except OSError:
-                return
-            if b"M-SEARCH" in data and b"bambulab" in data:
+        def answer_searches():
+            # A plain thread instead of loop.add_reader(): Windows' default event loop has no add_reader.
+            while True:
                 try:
-                    send.sendto(self._ssdp_message(False), addr)
+                    data, addr = listen.recvfrom(4096)
+                except socket.timeout:
+                    continue
                 except OSError:
-                    pass
+                    return
+                if b"M-SEARCH" in data and b"bambulab" in data:
+                    try:
+                        send.sendto(self._ssdp_message(False), addr)
+                    except OSError:
+                        pass
 
         if listen is not None:
-            self.loop.add_reader(listen.fileno(), on_search)
+            threading.Thread(target=answer_searches, daemon=True, name="ssdp-search").start()
         announce()
 
     # -- bind handshake ----------------------------------------------------

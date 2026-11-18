@@ -78,7 +78,9 @@ Re-run `Set up Bambu Studio.bat` after a Bambu Studio update, because updates re
 - Python 3.10+, standard library only for the phone bridge. The Bambu Studio printer also needs `cryptography`.
 - Talks to the Q2 through Moonraker (`POST /server/files/upload` with `print=true`) on port 7125.
 - Slices with the OrcaSlicer / QIDI Studio command line. Presets are read from the slicer's own profile folders
-  (system and user presets), with their inheritance merged so any recent version works.
+  (system and user presets), with their inheritance merged so any recent version works. Newer OrcaSlicer builds
+  pack their presets (`.opc`); then the bridge downloads the Q2 presets once from the OrcaSlicer project on GitHub
+  into `data/profiles`.
 - The pretend Bambu printer implements SSDP discovery (UDP 2021), the bind handshake (TCP 3000 / TLS 3002),
   a small MQTT broker (TLS 8883) and implicit FTPS (990, passive ports 50000-50100).
   It uses its own certificate authority stored in `data/certs`.
